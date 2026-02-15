@@ -1,4 +1,4 @@
-# Kalem v1.0.0 - Kasghar
+# Kalem v1.0.1 - Kasghar
 
 Kalem - Kasghar; akademik makale arama, kaynak birleştirme, PDF indirme, kütüphane yönetimi, dışa aktarma ve arşivleme için geliştirilmiş bir uygulamadır.
 
@@ -15,6 +15,7 @@ Kalem - Kasghar; akademik makale arama, kaynak birleştirme, PDF indirme, kütü
 9. [Geliştirme ve Test](#geliştirme-ve-test)
 10. [Sorun Giderme](#sorun-giderme)
 11. [Kullanılan Modeller ve Sağlayıcılar (Citation)](#kullanılan-modeller-ve-sağlayıcılar-citation)
+12. [Release Notes](#release-notes)
 
 ## Özellikler
 
@@ -238,3 +239,7 @@ Bu projede geliştirme sürecinde kullanılan AI asistanları ve uygulama içind
 7. Crossref. (n.d.). *REST API*. [https://api.crossref.org/](https://api.crossref.org/)  
 8. CORE. (n.d.). *CORE API Documentation*. [https://api.core.ac.uk/docs/v3](https://api.core.ac.uk/docs/v3)  
 9. Unpaywall. (n.d.). *Unpaywall Data/API*. [https://unpaywall.org/products/api](https://unpaywall.org/products/api)  
+
+## Release Notes
+
+- `v1.0.1`: `docs/release_notes.md`
