@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.0.1-p1 (2026-02-15)
+
+### Added
+- Settings page now includes a new `Hakkinda` subsection under the `Sistem` tab.
+- Header logo area now shows the application version directly below the app name.
+
+### Technical Notes
+- Frontend:
+  - Added centralized app constants: `APP_NAME`, `APP_VERSION`.
+  - Version label rendered in dashboard header.
+  - About card rendered in settings system tab.
+
 ## v1.0.1 (2026-02-15)
 
 ### Fixed

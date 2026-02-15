@@ -10,6 +10,7 @@ import {
   HardDrive,
   Key,
   Loader2,
+  Info,
   RefreshCw,
   Sparkles,
   XCircle,
@@ -39,6 +40,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { APP_NAME, APP_VERSION } from '@/constants/app';
 
 const PROVIDER_OPTIONS = [
   {
@@ -504,6 +506,26 @@ export default function Settings() {
                   <Sparkles className={`h-4 w-4 ${enrichMutation.isPending ? 'animate-pulse' : ''}`} />
                   {enrichMutation.isPending ? 'Metadata Tamamlaniyor...' : 'Eksik Verileri Tamamla'}
                 </Button>
+              </section>
+
+              <Separator />
+
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Info className="h-5 w-5" />
+                  <h2 className="text-lg font-semibold">Hakkinda</h2>
+                </div>
+                <div className="border rounded-lg p-4 space-y-2">
+                  <p className="text-sm">
+                    <span className="font-medium">Uygulama:</span> {APP_NAME}
+                  </p>
+                  <p className="text-sm">
+                    <span className="font-medium">Surum:</span> {APP_VERSION}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Akademik arama, kutuphane yonetimi, PDF indirme ve disa aktarma aracidir.
+                  </p>
+                </div>
               </section>
 
               <Separator />
