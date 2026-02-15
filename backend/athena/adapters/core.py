@@ -9,6 +9,7 @@ from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, Sear
 
 
 class CoreProvider(BaseSearchProvider):
+    provider_id = "core"
     """CORE API v3 adaptoru.
 
     Acik erisimli akademik makalelerin tam metin aramasini yapar.
@@ -25,6 +26,7 @@ class CoreProvider(BaseSearchProvider):
     MAX_RESULTS = 1000
 
     def __init__(self) -> None:
+        super().__init__()
         self.settings = get_settings()
 
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
@@ -38,18 +40,23 @@ class CoreProvider(BaseSearchProvider):
         Returns:
             Bulunan makalelerin listesi (hata veya API key yoksa bos liste)
         """
-        if not self.settings.core_api_key:
+        api_key = self.runtime_api_key or self.settings.core_api_key
+        if not api_key:
             logger.warning("CORE_API_KEY is not set, skipping CORE search")
             return []
 
         headers = {
-            "Authorization": f"Bearer {self.settings.core_api_key}",
+            "Authorization": f"Bearer {api_key}",
         }
 
         all_results: list[dict] = []
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            client_kwargs: dict = {"timeout": 60.0}
+            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 offset = 0
                 while offset < self.MAX_RESULTS:
                     params: dict[str, str | int] = {

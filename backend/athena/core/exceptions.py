@@ -1,4 +1,4 @@
-"""Athena özel hata sınıfları ve hata kodları.
+"""Kalem - Kasghar özel hata sınıfları ve hata kodları.
 
 TDD Bölüm 5 standartlarına uygun hata yönetimi.
 """
@@ -32,7 +32,7 @@ class ErrorCode(str, enum.Enum):
 
 
 class AthenaError(Exception):
-    """Athena uygulaması için temel hata sınıfı.
+    """Kalem - Kasghar uygulaması için temel hata sınıfı.
 
     Attributes:
         code: Hata kodu (ErrorCode enum)

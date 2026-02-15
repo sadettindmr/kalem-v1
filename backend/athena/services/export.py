@@ -1,11 +1,12 @@
 """Kütüphane dışa aktarma servisi.
 
-Sprint 4.3 - Library Export Service
+Sprint 12.1 - Gelismis Bibliyografik Export:
+- Akademik odakli kolon yapisi (APA/IEEE dahil)
 - CSV ve XLSX formatlarında dışa aktarma
-- Pandas DataFrame kullanımı
-- StreamingResponse ile dosya indirme
+- XLSX auto-width
 """
 
+from datetime import datetime
 from io import BytesIO
 from typing import Literal
 
@@ -88,36 +89,114 @@ class ExportService:
         return list(entries)
 
     def _create_dataframe(self, entries: list[LibraryEntry]) -> pd.DataFrame:
-        """LibraryEntry listesinden Pandas DataFrame oluşturur.
-
-        TDD Bölüm 3.5'e göre sütunlar:
-        - ID, Title, Authors, Year, Venue, DOI, Citation Count, Source, Tags
-        """
+        """LibraryEntry listesinden Sprint 12.1 kolon yapisinda DataFrame olusturur."""
         data = []
+        citation_col = f"Citation as of {datetime.now().strftime('%d.%m.%Y')}"
 
         for entry in entries:
             paper = entry.paper
 
-            # Authors: virgülle ayrılmış
             authors = ", ".join(a.name for a in paper.authors)
-
-            # Tags: virgülle ayrılmış
-            tags = ", ".join(t.name for t in entry.tags)
+            search_words = ", ".join(t.name for t in entry.tags)
+            doi_or_link = self._doi_or_link(paper.doi, paper.pdf_url)
 
             row = {
-                "ID": entry.id,
-                "Title": paper.title,
-                "Authors": authors,
-                "Year": paper.year,
-                "Venue": paper.venue or "",
-                "DOI": paper.doi or "",
-                "Citation Count": paper.citation_count,
-                "Source": entry.source.value,
-                "Tags": tags,
+                "Makale Adı": paper.title,
+                "Yazar(lar)": authors,
+                "Yayın Yılı": paper.year,
+                "Makale Türü": self._article_type(paper.venue),
+                "Yayın Platformu / Dergi": paper.venue or "",
+                "DOI / Link": doi_or_link,
+                "Keywords": "",
+                "Search Words": search_words,
+                "Citation (APA)": self.format_apa(paper.title, paper.authors, paper.year, paper.venue),
+                "Citation (IEEE)": self.format_ieee(paper.title, paper.authors, paper.year, paper.venue),
+                citation_col: paper.citation_count,
+                "Source": entry.source.value.title(),
+                "Downloaded": "EVET" if entry.download_status.value == "completed" else "HAYIR",
+                "Kod/Veri Erişilebilirliği": self._code_data_availability(
+                    paper.pdf_url,
+                    paper.abstract,
+                ),
             }
             data.append(row)
 
         return pd.DataFrame(data)
+
+    @staticmethod
+    def _article_type(venue: str | None) -> str:
+        venue_text = (venue or "").lower()
+        if "journal" in venue_text:
+            return "Dergi Makalesi"
+        if "conf" in venue_text:
+            return "Bildiri"
+        return "Diğer"
+
+    @staticmethod
+    def _doi_or_link(doi: str | None, pdf_url: str | None) -> str:
+        if doi:
+            return f"https://doi.org/{doi}"
+        if pdf_url:
+            return pdf_url
+        return ""
+
+    @staticmethod
+    def _initials(name_parts: list[str]) -> str:
+        return " ".join(f"{part[0]}." for part in name_parts if part)
+
+    def _format_author_apa(self, author_name: str) -> str:
+        parts = [p for p in author_name.strip().split() if p]
+        if not parts:
+            return "Unknown"
+        if len(parts) == 1:
+            return parts[0]
+        last_name = parts[-1]
+        initials = self._initials(parts[:-1])
+        return f"{last_name}, {initials}".strip()
+
+    def _format_author_ieee(self, author_name: str) -> str:
+        parts = [p for p in author_name.strip().split() if p]
+        if not parts:
+            return "Unknown"
+        if len(parts) == 1:
+            return parts[0]
+        last_name = parts[-1]
+        initials = self._initials(parts[:-1])
+        return f"{initials} {last_name}".strip()
+
+    def format_apa(
+        self,
+        title: str,
+        authors: list,
+        year: int | None,
+        venue: str | None,
+    ) -> str:
+        """Best-effort APA atif metni olusturur."""
+        author_names = [self._format_author_apa(a.name) for a in authors] if authors else ["Unknown"]
+        author_text = ", ".join(author_names)
+        year_text = str(year) if year else "n.d."
+        venue_text = venue or "Unknown Venue"
+        return f"{author_text} ({year_text}). {title}. {venue_text}."
+
+    def format_ieee(
+        self,
+        title: str,
+        authors: list,
+        year: int | None,
+        venue: str | None,
+    ) -> str:
+        """Best-effort IEEE atif metni olusturur."""
+        author_names = [self._format_author_ieee(a.name) for a in authors] if authors else ["Unknown"]
+        author_text = ", ".join(author_names)
+        venue_text = venue or "Unknown Venue"
+        year_text = str(year) if year else "n.d."
+        return f"{author_text}, '{title},' in {venue_text}, {year_text}."
+
+    @staticmethod
+    def _code_data_availability(pdf_url: str | None, abstract: str | None) -> str:
+        text = f"{pdf_url or ''} {abstract or ''}".lower()
+        markers = ("github.com", "gitlab.com", "zenodo")
+        return "Muhtemelen Var" if any(marker in text for marker in markers) else "Belirtilmemiş"
 
     def _export_csv(self, df: pd.DataFrame) -> tuple[BytesIO, str, str]:
         """DataFrame'i CSV formatında dışa aktarır.
@@ -132,7 +211,7 @@ class ExportService:
         return (
             buffer,
             "text/csv; charset=utf-8",
-            "athena_library_export.csv",
+            "kalem_kasghar_library_export.csv",
         )
 
     def _export_xlsx(self, df: pd.DataFrame) -> tuple[BytesIO, str, str]:
@@ -145,11 +224,22 @@ class ExportService:
 
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Library")
+            worksheet = writer.sheets["Library"]
+
+            # Kolon genisliklerini icerige gore ayarla (auto-width)
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    value = "" if cell.value is None else str(cell.value)
+                    if len(value) > max_length:
+                        max_length = len(value)
+                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 80)
 
         buffer.seek(0)
 
         return (
             buffer,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "athena_library_export.xlsx",
+            "kalem_kasghar_library_export.xlsx",
         )

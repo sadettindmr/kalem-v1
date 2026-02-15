@@ -34,11 +34,12 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "INFO"  # Log seviyesi: DEBUG, INFO, WARNING, ERROR
     data_dir: str = "/data/library"  # PDF dosyaları için klasör
+    outbound_proxy: Optional[str] = None  # Tum dis HTTP istekleri icin opsiyonel proxy URL
 
     # API Settings
     semantic_scholar_api_key: str = ""  # Semantic Scholar API key (rate limit için)
-    openalex_email: str = "athena@example.com"  # OpenAlex Polite Pool için
-    unpaywall_email: str = "athena@example.com"  # Unpaywall API için
+    openalex_email: str = "kalem.kasghar@example.com"  # OpenAlex Polite Pool için
+    unpaywall_email: str = "kalem.kasghar@example.com"  # Unpaywall API için
     openai_api_key: str = ""  # OpenAI API key
     core_api_key: Optional[str] = None  # CORE API key (https://core.ac.uk/services/api)
 

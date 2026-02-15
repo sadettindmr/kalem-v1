@@ -1,14 +1,16 @@
 import re
 import unicodedata
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 
 from athena.models.author import Author
 from athena.models.library import DownloadStatus, LibraryEntry, SourceType
 from athena.models.paper import Paper
 from athena.models.tag import Tag
-from athena.schemas.search import PaperResponse, PaperSource
+from athena.schemas.search import PaperResponse, PaperSource, SearchFilters
+from athena.services.search import SearchService
 
 
 def slugify(text: str) -> str:
@@ -38,6 +40,9 @@ def map_source(paper_source: PaperSource) -> SourceType:
     mapping = {
         PaperSource.SEMANTIC: SourceType.SEMANTIC,
         PaperSource.OPENALEX: SourceType.OPENALEX,
+        PaperSource.ARXIV: SourceType.ARXIV,
+        PaperSource.CROSSREF: SourceType.CROSSREF,
+        PaperSource.CORE: SourceType.CORE,
         PaperSource.MANUAL: SourceType.MANUAL,
     }
     return mapping.get(paper_source, SourceType.MANUAL)
@@ -48,6 +53,189 @@ class LibraryService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.search_service = SearchService(db)
+
+    async def get_library_entries(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        tag: str | None = None,
+        status: str | None = None,
+        min_citations: int | None = None,
+        year_start: int | None = None,
+        year_end: int | None = None,
+        search: str | None = None,
+    ) -> tuple[list[LibraryEntry], int]:
+        """Kutuphane kayitlarini filtreleyerek getirir.
+
+        Search doluysa PostgreSQL Full-Text Search + fallback ilike uygular.
+        """
+        query = select(LibraryEntry).options(
+            joinedload(LibraryEntry.paper),
+            joinedload(LibraryEntry.tags),
+        )
+        query = query.join(LibraryEntry.paper)
+
+        if status:
+            try:
+                query = query.where(
+                    LibraryEntry.download_status == DownloadStatus(status.lower())
+                )
+            except ValueError:
+                pass
+
+        if tag:
+            query = query.join(LibraryEntry.tags).where(Tag.name == tag.lower())
+
+        if min_citations is not None:
+            query = query.where(Paper.citation_count >= min_citations)
+
+        if year_start is not None:
+            query = query.where(Paper.year >= year_start)
+        if year_end is not None:
+            query = query.where(Paper.year <= year_end)
+
+        rank_expr = None
+        if search:
+            search_term = f"%{search.lower()}%"
+            ts_query = func.websearch_to_tsquery("english", search)
+            fts_match = Paper.search_vector.op("@@")(ts_query)
+
+            author_subquery = (
+                select(LibraryEntry.id)
+                .join(LibraryEntry.paper)
+                .join(Paper.authors)
+                .where(func.lower(Author.name).like(search_term))
+            )
+            tag_subquery = (
+                select(LibraryEntry.id)
+                .join(LibraryEntry.tags)
+                .where(func.lower(Tag.name).like(search_term))
+            )
+
+            fallback_match = (
+                func.lower(Paper.title).like(search_term)
+                | func.lower(func.coalesce(Paper.abstract, "")).like(search_term)
+                | LibraryEntry.id.in_(author_subquery)
+                | LibraryEntry.id.in_(tag_subquery)
+            )
+
+            query = query.where(fts_match | fallback_match)
+            rank_expr = func.ts_rank(Paper.search_vector, ts_query)
+
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        offset = (page - 1) * limit
+        query = query.offset(offset).limit(limit)
+
+        if rank_expr is not None:
+            query = query.order_by(rank_expr.desc(), LibraryEntry.id.desc())
+        else:
+            query = query.order_by(LibraryEntry.id.desc())
+
+        result = await self.db.execute(query)
+        entries = result.unique().scalars().all()
+        return list(entries), total
+
+    async def enrich_missing_metadata(self, limit: int = 20) -> dict:
+        """Kutuphanedeki eksik metadata'lari dis kaynaklardan tamamlar.
+
+        Is kurali:
+        - Sadece eksik metadata'ya sahip paper'lar islenir.
+        - DOI varsa DOI ile, yoksa baslik ile arama yapilir.
+        - Eslesmelerde once DOI, sonra normalize baslik kullanilir.
+        - Sadece eksik alanlar guncellenir.
+        """
+        stmt = (
+            select(LibraryEntry)
+            .options(
+                selectinload(LibraryEntry.paper).selectinload(Paper.authors),
+            )
+            .join(LibraryEntry.paper)
+            .order_by(LibraryEntry.id.desc())
+        )
+        result = await self.db.execute(stmt)
+        entries = result.scalars().all()
+
+        processed = 0
+        updated = 0
+        skipped = 0
+        failed = 0
+        details: list[dict] = []
+
+        for entry in entries:
+            if processed >= limit:
+                break
+
+            paper = entry.paper
+            if paper is None:
+                skipped += 1
+                continue
+
+            if not self._needs_metadata_enrichment(paper):
+                skipped += 1
+                continue
+
+            processed += 1
+            query = paper.doi if paper.doi else paper.title
+
+            try:
+                search_response = await self.search_service.search_papers(
+                    SearchFilters(query=query)
+                )
+                match = self._find_best_match(paper, search_response.results)
+                if not match:
+                    skipped += 1
+                    details.append(
+                        {
+                            "entry_id": entry.id,
+                            "paper_id": paper.id,
+                            "status": "no_match",
+                        }
+                    )
+                    continue
+
+                changed = await self._apply_metadata_update(paper, match)
+                if changed:
+                    updated += 1
+                    details.append(
+                        {
+                            "entry_id": entry.id,
+                            "paper_id": paper.id,
+                            "status": "updated",
+                        }
+                    )
+                else:
+                    skipped += 1
+                    details.append(
+                        {
+                            "entry_id": entry.id,
+                            "paper_id": paper.id,
+                            "status": "no_change",
+                        }
+                    )
+            except Exception as exc:
+                failed += 1
+                details.append(
+                    {
+                        "entry_id": entry.id,
+                        "paper_id": paper.id,
+                        "status": "failed",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+
+        await self.db.commit()
+
+        return {
+            "processed": processed,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "details": details,
+        }
 
     async def get_saved_external_ids(self, external_ids: list[str]) -> set[str]:
         """Verilen external_id'lerden kutuphanede kayitli olanlari dondurur."""
@@ -261,3 +449,98 @@ class LibraryService:
             # LibraryEntry-Tag ilişkisi
             library_entry.tags.append(tag)
             existing_tag_names.add(tag_name)
+
+    @staticmethod
+    def _normalize_for_match(text: str) -> str:
+        """Basliklari karsilastirma icin normalize eder."""
+        normalized = unicodedata.normalize("NFKD", text)
+        normalized = normalized.encode("ascii", "ignore").decode("ascii")
+        normalized = normalized.lower().strip()
+        normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized
+
+    @staticmethod
+    def _needs_metadata_enrichment(paper: Paper) -> bool:
+        """Paper'da eksik metadata olup olmadigini kontrol eder."""
+        has_no_authors = len(paper.authors) == 0
+        return any(
+            [
+                not paper.abstract,
+                not paper.year,
+                not paper.venue,
+                (paper.citation_count or 0) == 0,
+                not paper.pdf_url,
+                has_no_authors,
+            ]
+        )
+
+    def _find_best_match(
+        self, paper: Paper, candidates: list[PaperResponse]
+    ) -> PaperResponse | None:
+        """Arama sonucundan en uygun kaydi secer."""
+        if not candidates:
+            return None
+
+        if paper.doi:
+            paper_doi = paper.doi.lower().strip()
+            for item in candidates:
+                if item.external_id and item.external_id.lower().strip() == paper_doi:
+                    return item
+
+        normalized_title = self._normalize_for_match(paper.title)
+        for item in candidates:
+            if self._normalize_for_match(item.title) == normalized_title:
+                return item
+
+        return candidates[0]
+
+    async def _apply_metadata_update(self, paper: Paper, match: PaperResponse) -> bool:
+        """Eslesen kayittan sadece eksik alanlari gunceller."""
+        changed = False
+
+        if not paper.abstract and match.abstract:
+            paper.abstract = match.abstract
+            changed = True
+
+        if not paper.year and match.year:
+            paper.year = match.year
+            changed = True
+
+        if not paper.venue and match.venue:
+            paper.venue = match.venue
+            changed = True
+
+        if (paper.citation_count or 0) == 0 and (match.citation_count or 0) > 0:
+            paper.citation_count = match.citation_count
+            changed = True
+
+        if not paper.pdf_url and match.pdf_url:
+            paper.pdf_url = match.pdf_url
+            changed = True
+
+        # DOI yoksa ve eslesen kayit DOI ise doldur
+        if (
+            not paper.doi
+            and match.external_id
+            and match.external_id.startswith("10.")
+        ):
+            paper.doi = match.external_id
+            changed = True
+
+        # Author'lari sadece bossa tamamla
+        await self.db.refresh(paper, ["authors"])
+        if len(paper.authors) == 0 and match.authors:
+            for author_data in match.authors:
+                author_slug = slugify(author_data.name)
+                stmt = select(Author).where(Author.slug == author_slug)
+                result = await self.db.execute(stmt)
+                author = result.scalar_one_or_none()
+                if not author:
+                    author = Author(name=author_data.name, slug=author_slug)
+                    self.db.add(author)
+                    await self.db.flush()
+                paper.authors.append(author)
+            changed = True
+
+        return changed

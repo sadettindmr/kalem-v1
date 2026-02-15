@@ -32,9 +32,9 @@ export default function DashboardLayout() {
           onClick={handleLogoClick}
         >
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-lg">A</span>
+            <span className="text-primary-foreground font-bold text-lg">K</span>
           </div>
-          <h1 className="text-xl font-semibold">Project Athena</h1>
+          <h1 className="text-xl font-semibold">Kalem - Kasghar</h1>
         </div>
 
         {/* Sag: Ayarlar */}

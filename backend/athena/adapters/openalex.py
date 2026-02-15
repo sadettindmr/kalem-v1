@@ -7,6 +7,7 @@ from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, Sear
 
 
 class OpenAlexProvider(BaseSearchProvider):
+    provider_id = "openalex"
     """OpenAlex API adaptoru.
 
     Cursor pagination kullanir:
@@ -24,6 +25,7 @@ class OpenAlexProvider(BaseSearchProvider):
     MAX_RESULTS = 1000
 
     def __init__(self) -> None:
+        super().__init__()
         self.settings = get_settings()
 
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
@@ -49,14 +51,19 @@ class OpenAlexProvider(BaseSearchProvider):
         elif filters.year_end:
             params["filter"] = f"publication_year:-{filters.year_end}"
 
+        contact_email = self.runtime_contact_email or self.settings.openalex_email
         headers = {
-            "User-Agent": f"Athena/2.0 (mailto:{self.settings.openalex_email})",
+            "User-Agent": f"Kalem-Kasghar/1.0.0 (mailto:{contact_email})",
         }
 
         all_results: list[dict] = []
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            client_kwargs: dict = {"timeout": 60.0}
+            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 while len(all_results) < self.MAX_RESULTS:
                     response = await client.get(
                         self.BASE_URL, params=params, headers=headers

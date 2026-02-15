@@ -129,3 +129,26 @@ export interface CheckLibraryRequest {
 export interface CheckLibraryResponse {
   saved_ids: string[];
 }
+
+// ==================== System Settings Types ====================
+
+export interface UserSettingsResponse {
+  id: number;
+  openai_api_key: string | null;
+  semantic_scholar_api_key: string | null;
+  core_api_key: string | null;
+  openalex_email: string | null;
+  enabled_providers: string[];
+  proxy_url: string | null;
+  proxy_enabled: boolean;
+}
+
+export interface UserSettingsUpdateRequest {
+  openai_api_key?: string | null;
+  semantic_scholar_api_key?: string | null;
+  core_api_key?: string | null;
+  openalex_email?: string | null;
+  enabled_providers?: string[];
+  proxy_url?: string | null;
+  proxy_enabled?: boolean;
+}

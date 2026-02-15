@@ -59,8 +59,8 @@ export async function checkLibraryPapers(external_ids: string[]): Promise<CheckL
 /**
  * Tamamlanmamis tum indirmeleri tekrar kuyruga ekler
  */
-export async function retryDownloads(): Promise<{ status: string; message: string }> {
-  return api.post<never, { status: string; message: string }>('/library/retry-downloads');
+export async function retryDownloads(scope: 'stuck' | 'all' = 'stuck'): Promise<{ status: string; message: string }> {
+  return api.post<never, { status: string; message: string }>(`/library/retry-downloads?scope=${scope}`);
 }
 
 /**
@@ -82,4 +82,26 @@ export interface DownloadStats {
 
 export async function fetchDownloadStats(): Promise<DownloadStats> {
   return api.get<never, DownloadStats>('/library/download-stats');
+}
+
+export interface EnrichMetadataResponse {
+  status: string;
+  message: string;
+  processed: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  details: Array<{
+    entry_id: number;
+    paper_id: number;
+    status: string;
+    error?: string;
+  }>;
+}
+
+/**
+ * Kütüphanedeki eksik metadata alanlarını tamamlar
+ */
+export async function enrichMetadata(limit = 20): Promise<EnrichMetadataResponse> {
+  return api.post<never, EnrichMetadataResponse>(`/library/enrich-metadata?limit=${limit}`);
 }

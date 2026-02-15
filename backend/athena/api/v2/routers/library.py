@@ -1,4 +1,8 @@
 from typing import Literal, Optional
+from pathlib import Path
+from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -9,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from athena.core.database import get_db
+from athena.core.config import get_settings
+from athena.core.file_paths import resolve_data_file_path, to_relative_data_path
 from athena.models.author import Author
 from athena.models.library import DownloadStatus, LibraryEntry
 from athena.models.paper import Paper
@@ -25,6 +31,62 @@ from athena.services.library import LibraryService
 from athena.tasks.downloader import download_paper_task, retry_stuck_downloads, retry_all_incomplete_downloads
 
 router = APIRouter(prefix="/library", tags=["Library"])
+
+
+def _apply_library_filters(
+    query,
+    tag: Optional[str] = None,
+    status: Optional[str] = None,
+    min_citations: Optional[int] = None,
+    year_start: Optional[int] = None,
+    year_end: Optional[int] = None,
+    search: Optional[str] = None,
+):
+    """Library listeleme ve ZIP indirme endpointleri icin ortak filtre uygulayici."""
+    query = query.join(LibraryEntry.paper)
+
+    if status:
+        try:
+            status_enum = DownloadStatus(status.lower())
+            query = query.where(LibraryEntry.download_status == status_enum)
+        except ValueError:
+            pass
+
+    if tag:
+        query = query.join(LibraryEntry.tags).where(Tag.name == tag.lower())
+
+    if min_citations is not None:
+        query = query.where(Paper.citation_count >= min_citations)
+
+    if year_start is not None:
+        query = query.where(Paper.year >= year_start)
+    if year_end is not None:
+        query = query.where(Paper.year <= year_end)
+
+    if search:
+        search_term = f"%{search.lower()}%"
+        ts_query = func.websearch_to_tsquery("english", search)
+        fts_match = Paper.search_vector.op("@@")(ts_query)
+        author_subquery = (
+            select(LibraryEntry.id)
+            .join(LibraryEntry.paper)
+            .join(Paper.authors)
+            .where(func.lower(Author.name).like(search_term))
+        )
+        tag_subquery = (
+            select(LibraryEntry.id)
+            .join(LibraryEntry.tags)
+            .where(func.lower(Tag.name).like(search_term))
+        )
+        fallback_match = (
+            func.lower(Paper.title).like(search_term)
+            | func.lower(func.coalesce(Paper.abstract, "")).like(search_term)
+            | LibraryEntry.id.in_(author_subquery)
+            | LibraryEntry.id.in_(tag_subquery)
+        )
+        query = query.where(fts_match | fallback_match)
+
+    return query
 
 
 class IngestRequest(BaseModel):
@@ -183,70 +245,41 @@ async def list_library(
     Returns:
         Sayfalanmış kütüphane listesi
     """
-    # Base query with joinedload to avoid N+1
-    query = select(LibraryEntry).options(
-        joinedload(LibraryEntry.paper),
-        joinedload(LibraryEntry.tags),
+    service = LibraryService(db)
+    entries, total = await service.get_library_entries(
+        page=page,
+        limit=limit,
+        tag=tag,
+        status=status,
+        min_citations=min_citations,
+        year_start=year_start,
+        year_end=year_end,
+        search=search,
     )
 
-    # Paper tablosuyla join (filtreler icin)
-    query = query.join(LibraryEntry.paper)
+    # "completed" kayitlarin file_path degerini normalize et ve
+    # fiziksel dosyasi olmayanlari otomatik iyilestir.
+    settings = get_settings()
+    data_dir = Path(settings.data_dir)
+    status_repaired = False
+    for entry in entries:
+        if entry.download_status == DownloadStatus.COMPLETED and entry.file_path:
+            resolved = resolve_data_file_path(entry.file_path, data_dir)
+            if resolved is None:
+                entry.download_status = DownloadStatus.FAILED
+                entry.file_path = None
+                status_repaired = True
+                continue
 
-    # Status filtresi
-    if status:
-        try:
-            status_enum = DownloadStatus(status.lower())
-            query = query.where(LibraryEntry.download_status == status_enum)
-        except ValueError:
-            pass  # Geçersiz status değeri, filtreleme yapma
+            # Legacy absolute path'leri relative formata cevir.
+            normalized_relative = to_relative_data_path(resolved, data_dir)
 
-    # Tag filtresi
-    if tag:
-        query = query.join(LibraryEntry.tags).where(Tag.name == tag.lower())
+            if normalized_relative != entry.file_path:
+                entry.file_path = normalized_relative
+                status_repaired = True
 
-    # Min citations filtresi
-    if min_citations is not None:
-        query = query.where(Paper.citation_count >= min_citations)
-
-    # Year range filtresi
-    if year_start is not None:
-        query = query.where(Paper.year >= year_start)
-    if year_end is not None:
-        query = query.where(Paper.year <= year_end)
-
-    # Keyword search (baslik, yazar, etiket)
-    if search:
-        search_term = f"%{search.lower()}%"
-        # Yazar ve tag icin subquery kullan
-        author_subquery = (
-            select(LibraryEntry.id)
-            .join(LibraryEntry.paper)
-            .join(Paper.authors)
-            .where(func.lower(Author.name).like(search_term))
-        )
-        tag_subquery = (
-            select(LibraryEntry.id)
-            .join(LibraryEntry.tags)
-            .where(func.lower(Tag.name).like(search_term))
-        )
-        query = query.where(
-            func.lower(Paper.title).like(search_term)
-            | LibraryEntry.id.in_(author_subquery)
-            | LibraryEntry.id.in_(tag_subquery)
-        )
-
-    # Total count (filtreleme sonrası)
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Pagination
-    offset = (page - 1) * limit
-    query = query.offset(offset).limit(limit).order_by(LibraryEntry.id.desc())
-
-    # Execute query
-    result = await db.execute(query)
-    entries = result.unique().scalars().all()
+    if status_repaired:
+        await db.commit()
 
     # Convert to schema
     items = []
@@ -286,6 +319,68 @@ async def list_library(
     )
 
 
+@router.get("/download-zip")
+async def download_zip_archive(
+    tag: Optional[str] = Query(default=None, description="Etikete gore filtrele"),
+    status: Optional[str] = Query(default=None, description="Indirme durumuna gore filtrele"),
+    min_citations: Optional[int] = Query(default=None, ge=0, description="Minimum atif sayisi"),
+    year_start: Optional[int] = Query(default=None, ge=1900, le=2100, description="Baslangic yili"),
+    year_end: Optional[int] = Query(default=None, ge=1900, le=2100, description="Bitis yili"),
+    search: Optional[str] = Query(default=None, description="Baslik, yazar veya etiket aramasi"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Filtrelenmis ve indirilmeye hazir PDF dosyalarini ZIP olarak dondurur."""
+    query = select(LibraryEntry).options(
+        joinedload(LibraryEntry.paper),
+        joinedload(LibraryEntry.tags),
+    )
+    query = _apply_library_filters(
+        query=query,
+        tag=tag,
+        status=status,
+        min_citations=min_citations,
+        year_start=year_start,
+        year_end=year_end,
+        search=search,
+    ).order_by(LibraryEntry.id.desc())
+
+    result = await db.execute(query)
+    entries = result.unique().scalars().all()
+
+    settings = get_settings()
+    data_dir = Path(settings.data_dir)
+
+    zip_buffer = BytesIO()
+    added_count = 0
+
+    with ZipFile(zip_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+        for entry in entries:
+            if entry.download_status != DownloadStatus.COMPLETED:
+                continue
+            if not entry.file_path:
+                continue
+
+            resolved = resolve_data_file_path(entry.file_path, data_dir)
+            if not resolved:
+                continue
+
+            arc_name = f"{entry.id}_{resolved.name}"
+            archive.write(resolved, arcname=arc_name)
+            added_count += 1
+
+    zip_buffer.seek(0)
+    date_str = datetime.now().strftime("%Y%m%d")
+    filename = f"kalem_library_archive_{date_str}.zip"
+
+    logger.info(f"ZIP archive created: files={added_count}, filename={filename}")
+
+    return StreamingResponse(
+        content=zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 class RetryDownloadsResponse(BaseModel):
     """İndirmeleri tekrar deneme yanıtı."""
 
@@ -294,18 +389,30 @@ class RetryDownloadsResponse(BaseModel):
 
 
 @router.post("/retry-downloads", response_model=RetryDownloadsResponse)
-async def retry_downloads() -> RetryDownloadsResponse:
-    """Tamamlanmamis tum indirmeleri tekrar kuyruga ekler.
+async def retry_downloads(
+    scope: Literal["stuck", "all"] = Query(
+        default="stuck",
+        description="Retry kapsami: stuck (1 saatten eski pending/downloading) veya all (tum incomplete)",
+    ),
+) -> RetryDownloadsResponse:
+    """Indirmeleri tekrar kuyruga ekler.
 
-    pending, downloading ve failed durumdaki TUM kayitlari bulur,
-    durumlarini sifirlar ve tekrar indirme kuyruguna ekler.
+    - scope=stuck: 1 saatten eski pending/downloading kayitlari tekrar dener
+    - scope=all: pending/downloading/failed tum kayitlari tekrar dener
     """
     try:
-        result = retry_all_incomplete_downloads.delay()
-        logger.info("Retry all incomplete downloads task queued")
+        if scope == "all":
+            retry_all_incomplete_downloads.delay()
+            logger.info("Retry all incomplete downloads task queued")
+            message = "Tum tamamlanmamis indirmeler tekrar kuyruga eklendi"
+        else:
+            retry_stuck_downloads.delay()
+            logger.info("Retry stuck downloads task queued")
+            message = "Takili kalan indirmeler tekrar kuyruga eklendi"
+
         return RetryDownloadsResponse(
             status="queued",
-            message="Tum tamamlanmamis indirmeler tekrar kuyruga eklendi",
+            message=message,
         )
     except Exception as e:
         logger.error(f"Failed to queue retry task: {e}")
@@ -324,6 +431,38 @@ class DownloadStatsResponse(BaseModel):
     failed: int = 0
     total: int = 0
     failed_entries: list[dict] = []
+
+
+class EnrichMetadataResponse(BaseModel):
+    """Eksik metadata tamamlama yaniti."""
+
+    status: str
+    message: str
+    processed: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    details: list[dict] = []
+
+
+@router.post("/enrich-metadata", response_model=EnrichMetadataResponse)
+async def enrich_metadata(
+    limit: int = Query(default=20, ge=1, le=100, description="Maksimum islenecek kayit"),
+    db: AsyncSession = Depends(get_db),
+) -> EnrichMetadataResponse:
+    """Kutuphanedeki eksik metadata alanlarini dis kaynaklarla tamamlar."""
+    service = LibraryService(db)
+    result = await service.enrich_missing_metadata(limit=limit)
+
+    return EnrichMetadataResponse(
+        status="completed",
+        message="Eksik metadata tamamlama islemi tamamlandi",
+        processed=result["processed"],
+        updated=result["updated"],
+        skipped=result["skipped"],
+        failed=result["failed"],
+        details=result["details"],
+    )
 
 
 @router.get("/download-stats", response_model=DownloadStatsResponse)

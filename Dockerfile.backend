@@ -24,7 +24,11 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/poetry.lock* ./
 
 # Bağımlılıkları yükle
-RUN poetry install --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi --no-root || ( \
+    echo "poetry.lock uyumsuz, pyproject ile yeniden resolve ediliyor..." && \
+    rm -f poetry.lock && \
+    poetry install --no-interaction --no-ansi --no-root \
+)
 
 # Kaynak kodları kopyala
 COPY backend/ ./

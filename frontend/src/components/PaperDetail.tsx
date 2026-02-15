@@ -4,6 +4,7 @@
  * PDF Viewer (iframe embed) destegi
  */
 
+import { useEffect, useState } from 'react';
 import { BookOpen, ExternalLink, Calendar, Users, Quote, Tag, Save, Loader2, Check, FileText } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ import type { PaperResponse } from '@/types/api';
 export default function PaperDetail() {
   const { selectedPaperId, searchResults, activeTab, lastSearchQuery } = useUIStore();
   const queryClient = useQueryClient();
+  const [isPdfViewerVisible, setIsPdfViewerVisible] = useState(false);
 
   // Library verisi
   const { data: libraryData } = useQuery({
@@ -68,9 +70,35 @@ export default function PaperDetail() {
 
   const isFromSearch = activeTab === 'search' && selectedPaper && !selectedPaperId?.startsWith('library-');
 
+  const buildPdfEmbedUrl = (path: string | null): string | null => {
+    if (!path) return null;
+
+    // Eski kayitlarda absolute path (/data/library/...) gelebilir.
+    // StaticFiles mount'u /files oldugu icin relative path'e normalize et.
+    let normalizedPath = path.trim();
+    const dataPrefix = '/data/library/';
+    if (normalizedPath.startsWith(dataPrefix)) {
+      normalizedPath = normalizedPath.slice(dataPrefix.length);
+    } else if (normalizedPath.startsWith('/')) {
+      normalizedPath = normalizedPath.slice(1);
+    }
+
+    // URL-safe segment encoding
+    normalizedPath = normalizedPath
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+
+    if (!normalizedPath) return null;
+
+    // Ayni-origin /files proxy kullanimi (nginx/vite proxy ile backend'e gider)
+    return `/files/${normalizedPath}`;
+  };
+
   // PDF embed URL - sadece kutuphane makalesi + status completed + file_path varsa
   const pdfEmbedUrl = downloadStatus === 'completed' && filePath
-    ? `http://localhost:8000/files/${filePath}`
+    ? buildPdfEmbedUrl(filePath)
     : null;
 
   // Dis kaynak linki - DOI veya pdf_url
@@ -85,6 +113,11 @@ export default function PaperDetail() {
       search_query: lastSearchQuery,
     });
   };
+
+  // Makale secimi degistiginde PDF viewer'i otomatik acma.
+  useEffect(() => {
+    setIsPdfViewerVisible(false);
+  }, [selectedPaperId, activeTab]);
 
   return (
     <div className="flex flex-col h-full">
@@ -215,10 +248,10 @@ export default function PaperDetail() {
                   <Button
                     variant="outline"
                     className="w-full gap-2"
-                    onClick={() => window.open(pdfEmbedUrl, '_blank')}
+                    onClick={() => setIsPdfViewerVisible((v) => !v)}
                   >
                     <ExternalLink className="h-4 w-4" />
-                    PDF&apos;i Ac
+                    {isPdfViewerVisible ? 'PDF\'i Gizle' : 'PDF\'i Goruntule'}
                   </Button>
                 )}
 
@@ -250,12 +283,20 @@ export default function PaperDetail() {
                   <FileText className="h-4 w-4" />
                   PDF Goruntuleyici
                 </h4>
-                {pdfEmbedUrl ? (
+                {pdfEmbedUrl && isPdfViewerVisible ? (
                   <iframe
                     src={pdfEmbedUrl}
                     className="w-full h-[500px] border rounded-md"
                     title={`PDF: ${selectedPaper.title}`}
                   />
+                ) : pdfEmbedUrl ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground border rounded-md bg-muted/30">
+                    <FileText className="h-8 w-8 mb-2 opacity-50" />
+                    <p className="text-sm">PDF hazir</p>
+                    <p className="text-xs mt-1">
+                      Sagdaki "PDF&apos;i Goruntule" butonu ile acabilirsiniz
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground border rounded-md bg-muted/30">
                     <FileText className="h-8 w-8 mb-2 opacity-50" />

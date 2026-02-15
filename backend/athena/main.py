@@ -1,16 +1,16 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from athena.api.v2.routers import library, search, system
+from athena.api.v2.routers import library, search, settings as settings_router, system
 from athena.core.config import get_settings
 from athena.core.exceptions import AthenaError, ErrorCode
+from athena.core.file_paths import resolve_data_file_path
 from athena.core.logging import get_request_id, setup_logging
 from athena.core.middleware import RequestLoggingMiddleware
 
@@ -18,7 +18,7 @@ from athena.core.middleware import RequestLoggingMiddleware
 setup_logging()
 
 app = FastAPI(
-    title="Project Athena",
+    title="Kalem - Kasghar",
     description="Modular Monolith Backend API",
     version="2.0.0",
     docs_url="/docs",
@@ -44,14 +44,27 @@ app.add_middleware(
 
 # Include routers
 app.include_router(system.router, prefix="/api/v2")
+app.include_router(settings_router.router, prefix="/api/v2")
 app.include_router(search.router, prefix="/api/v2")
 app.include_router(library.router, prefix="/api/v2")
 
-# Static Files - İndirilen PDF dosyalarını sunmak için
+# PDF dosyalari icin base directory
 settings = get_settings()
 data_dir = Path(settings.data_dir)
 data_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/files", StaticFiles(directory=settings.data_dir), name="files")
+
+
+@app.get("/files/{requested_path:path}")
+async def serve_pdf_file(requested_path: str) -> FileResponse:
+    """Indirilen PDF dosyalarini guvenli sekilde servis eder."""
+    resolved = resolve_data_file_path(requested_path, data_dir)
+    if not resolved:
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        path=resolved,
+        media_type="application/pdf",
+        filename=resolved.name,
+    )
 
 
 # ============================================================================
@@ -80,7 +93,7 @@ def _get_request_id_from_context(request: Request) -> str | None:
 
 @app.exception_handler(AthenaError)
 async def athena_error_handler(request: Request, exc: AthenaError) -> JSONResponse:
-    """Athena özel hatalarını yakalar ve standart formatta döner."""
+    """Kalem - Kasghar özel hatalarını yakalar ve standart formatta döner."""
     request_id = _get_request_id_from_context(request)
 
     logger.warning(
@@ -234,7 +247,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 async def root():
     """Root endpoint."""
     return {
-        "message": "Project Athena API",
+        "message": "Kalem - Kasghar API",
         "version": "2.0.0",
         "docs": "/docs",
     }

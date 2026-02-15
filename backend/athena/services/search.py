@@ -1,18 +1,33 @@
 import asyncio
 import re
 import unicodedata
+from dataclasses import dataclass
 
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from athena.adapters import ArxivProvider, CoreProvider, CrossrefProvider, OpenAlexProvider, SemanticScholarProvider
 from athena.adapters.base import BaseSearchProvider
+from athena.core.config import get_settings as get_env_settings
+from athena.models.settings import DEFAULT_ENABLED_PROVIDERS
 from athena.schemas.search import PaperResponse, PaperSource, SearchFilters, SearchMeta, SearchResponse
+from athena.services.settings import UserSettingsService
+
+
+@dataclass
+class RuntimeSearchSettings:
+    enabled_providers: list[str]
+    semantic_scholar_api_key: str | None
+    core_api_key: str | None
+    contact_email: str
+    proxy_url: str | None
 
 
 class SearchService:
     """Arama servis katmani - adaptorleri paralel calistirir ve sonuclari birlestirir."""
 
-    def __init__(self) -> None:
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        self.db = db
         self.providers: list[BaseSearchProvider] = [
             SemanticScholarProvider(),
             OpenAlexProvider(),
@@ -35,8 +50,38 @@ class SearchService:
         normalized_query = re.sub(r"\s+", " ", normalized_query)
         normalized_filters = filters.model_copy(update={"query": normalized_query})
 
-        # Paralel arama
-        tasks = [provider.search(normalized_filters) for provider in self.providers]
+        runtime = await self._load_runtime_settings()
+        enabled_set = set(runtime.enabled_providers)
+        active_providers = [
+            provider
+            for provider in self.providers
+            if provider.provider_id in enabled_set
+        ]
+        if not active_providers:
+            logger.warning("All providers are disabled in UserSettings")
+            return SearchResponse(
+                results=[],
+                meta=SearchMeta(
+                    raw_semantic=0,
+                    raw_openalex=0,
+                    raw_arxiv=0,
+                    raw_crossref=0,
+                    raw_core=0,
+                    duplicates_removed=0,
+                    total=0,
+                    errors=["No enabled providers configured"],
+                ),
+            )
+
+        for provider in active_providers:
+            provider.configure_runtime(
+                proxy_url=runtime.proxy_url,
+                api_key=self._provider_api_key(provider.provider_id, runtime),
+                contact_email=runtime.contact_email,
+            )
+
+        # Paralel arama (yalnizca aktif providerlar)
+        tasks = [provider.search(normalized_filters) for provider in active_providers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Provider adlarini mapping ile tanimla
@@ -49,11 +94,17 @@ class SearchService:
         }
 
         # Flatten: Tum sonuclari tek listede birlestir + kaynak bazli sayimlar
-        raw_counts: dict[str, int] = {}
+        raw_counts: dict[str, int] = {
+            "raw_semantic": 0,
+            "raw_openalex": 0,
+            "raw_arxiv": 0,
+            "raw_crossref": 0,
+            "raw_core": 0,
+        }
         errors: list[str] = []
         all_papers: list[PaperResponse] = []
         for i, result in enumerate(results):
-            provider_class = type(self.providers[i]).__name__
+            provider_class = type(active_providers[i]).__name__
             raw_key, display_name = provider_raw_keys.get(provider_class, (None, provider_class))
 
             if isinstance(result, Exception):
@@ -64,9 +115,15 @@ class SearchService:
                     raw_counts[raw_key] = 0
                 continue
 
+            # Ek guvenlik: provider cagrilmissa bile, donen sonuclari
+            # UserSettings.enabled_providers ile source bazinda filtrele.
+            filtered_result = [
+                paper for paper in result if paper.source.value in enabled_set
+            ]
+
             if raw_key:
-                raw_counts[raw_key] = len(result)
-            all_papers.extend(result)
+                raw_counts[raw_key] = len(filtered_result)
+            all_papers.extend(filtered_result)
 
         # Keyword relevance filtresi
         # Virgullerle ayrilmis konsept gruplarini olustur
@@ -92,6 +149,41 @@ class SearchService:
         )
 
         return SearchResponse(results=unique_papers, meta=meta)
+
+    async def _load_runtime_settings(self) -> RuntimeSearchSettings:
+        env = get_env_settings()
+        runtime = RuntimeSearchSettings(
+            enabled_providers=list(DEFAULT_ENABLED_PROVIDERS),
+            semantic_scholar_api_key=env.semantic_scholar_api_key or None,
+            core_api_key=env.core_api_key or None,
+            contact_email=env.openalex_email,
+            proxy_url=env.outbound_proxy or None,
+        )
+        if not self.db:
+            return runtime
+
+        settings_row = await UserSettingsService(self.db).get_settings()
+        runtime.enabled_providers = settings_row.enabled_providers or list(
+            DEFAULT_ENABLED_PROVIDERS
+        )
+        runtime.semantic_scholar_api_key = settings_row.semantic_scholar_api_key or None
+        runtime.core_api_key = settings_row.core_api_key or None
+        runtime.contact_email = settings_row.openalex_email or env.openalex_email
+        runtime.proxy_url = (
+            settings_row.proxy_url
+            if settings_row.proxy_enabled and settings_row.proxy_url
+            else None
+        )
+        return runtime
+
+    def _provider_api_key(
+        self, provider_id: str, runtime: RuntimeSearchSettings
+    ) -> str | None:
+        if provider_id == "semantic":
+            return runtime.semantic_scholar_api_key
+        if provider_id == "core":
+            return runtime.core_api_key
+        return None
 
     # Kaynak oncelik sirasi: dusuk sayi = yuksek oncelik
     SOURCE_PRIORITY: dict[PaperSource, int] = {

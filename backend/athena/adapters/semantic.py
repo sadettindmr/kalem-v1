@@ -9,6 +9,7 @@ from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, Sear
 
 
 class SemanticScholarProvider(BaseSearchProvider):
+    provider_id = "semantic"
     """Semantic Scholar Graph API adaptoru.
 
     Standart search endpoint kullanir:
@@ -26,6 +27,7 @@ class SemanticScholarProvider(BaseSearchProvider):
     MAX_RESULTS = 1000
 
     def __init__(self) -> None:
+        super().__init__()
         self.settings = get_settings()
 
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
@@ -62,13 +64,18 @@ class SemanticScholarProvider(BaseSearchProvider):
 
         # API key varsa header'a ekle
         headers: dict[str, str] = {}
-        if self.settings.semantic_scholar_api_key:
-            headers["x-api-key"] = self.settings.semantic_scholar_api_key
+        api_key = self.runtime_api_key or self.settings.semantic_scholar_api_key
+        if api_key:
+            headers["x-api-key"] = api_key
 
         all_data: list[dict] = []
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            client_kwargs: dict = {"timeout": 60.0}
+            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 offset = 0
                 while offset < self.MAX_RESULTS:
                     params["offset"] = offset

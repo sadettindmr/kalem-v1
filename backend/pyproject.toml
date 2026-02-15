@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "athena"
 version = "2.0.0"
-description = "Project Athena - Modular Monolith Backend"
+description = "Kalem v1.0.0 - Kasghar - Modular Monolith Backend"
 authors = ["Your Name <your.email@example.com>"]
 package-mode = false
 

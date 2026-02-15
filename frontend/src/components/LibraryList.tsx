@@ -3,12 +3,14 @@
  * useQuery ile GET /api/v2/library + refetchInterval: 5000
  */
 
-import { Library, Loader2 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { Archive, Library, Loader2, RefreshCw } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/stores/ui-store';
-import { fetchLibrary } from '@/services/library';
+import { fetchDownloadStats, fetchLibrary, retryDownloads } from '@/services/library';
 import LibraryItem from '@/components/LibraryItem';
 
 // Loading skeleton
@@ -26,6 +28,7 @@ function LibraryItemSkeleton() {
 }
 
 export default function LibraryList() {
+  const queryClient = useQueryClient();
   const {
     selectedPaperId,
     setSelectedPaperId,
@@ -51,8 +54,46 @@ export default function LibraryList() {
     refetchInterval: 5000,
   });
 
+  const { data: downloadStats } = useQuery({
+    queryKey: ['download-stats'],
+    queryFn: fetchDownloadStats,
+    refetchInterval: 10000,
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: () => {
+      const hasFailed = (downloadStats?.failed ?? 0) > 0;
+      return retryDownloads(hasFailed ? 'all' : 'stuck');
+    },
+    onSuccess: (result) => {
+      toast.success(result.message);
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['download-stats'] });
+    },
+    onError: () => {
+      toast.error('Takili indirmeler tekrar denenemedi');
+    },
+  });
+
   const entries = data?.items ?? [];
   const total = data?.total ?? 0;
+  const hasRetryable =
+    (downloadStats?.pending ?? 0) > 0 ||
+    (downloadStats?.downloading ?? 0) > 0 ||
+    (downloadStats?.failed ?? 0) > 0;
+
+  const handleDownloadZip = () => {
+    const params = new URLSearchParams();
+    if (libraryFilterTag) params.set('tag', libraryFilterTag);
+    if (libraryFilterStatus) params.set('status', libraryFilterStatus);
+    if (libraryFilterMinCitations != null) params.set('min_citations', String(libraryFilterMinCitations));
+    if (libraryFilterYearStart != null && libraryFilterYearStart >= 1900) params.set('year_start', String(libraryFilterYearStart));
+    if (libraryFilterYearEnd != null && libraryFilterYearEnd >= 1900) params.set('year_end', String(libraryFilterYearEnd));
+    if (libraryFilterSearch) params.set('search', libraryFilterSearch);
+
+    const query = params.toString();
+    window.open(`/api/v2/library/download-zip${query ? `?${query}` : ''}`, '_blank');
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -65,6 +106,27 @@ export default function LibraryList() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={handleDownloadZip}
+          >
+            <Archive className="h-3.5 w-3.5" />
+            PDF Arsivi Indir (.zip)
+          </Button>
+          {hasRetryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => retryMutation.mutate()}
+              disabled={retryMutation.isPending}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${retryMutation.isPending ? 'animate-spin' : ''}`} />
+              {retryMutation.isPending ? 'Kuyruga Ekleniyor...' : 'Indirmeleri Tekrar Dene'}
+            </Button>
+          )}
           {total > 0 && (
             <span className="text-sm text-muted-foreground">
               {total} makale

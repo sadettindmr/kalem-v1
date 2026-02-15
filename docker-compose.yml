@@ -2,7 +2,7 @@ services:
   # ==================== Altyapi Servisleri ====================
   postgres_db:
     image: postgres:16-alpine
-    container_name: athena_postgres
+    container_name: kalem_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,7 +20,7 @@ services:
 
   redis_cache:
     image: redis:7-alpine
-    container_name: athena_redis
+    container_name: kalem_redis
     ports:
       - "6379:6379"
     restart: unless-stopped
@@ -32,7 +32,7 @@ services:
 
   rabbitmq_broker:
     image: rabbitmq:3-management-alpine
-    container_name: athena_rabbitmq
+    container_name: kalem_rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
@@ -51,8 +51,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: athena_backend
-    command: uvicorn athena.main:app --host 0.0.0.0 --port 8000
+    container_name: kalem_backend
+    command: sh -c "alembic upgrade heads && uvicorn athena.main:app --host 0.0.0.0 --port 8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis_cache:6379/0
@@ -60,13 +60,14 @@ services:
       - DEBUG=${DEBUG:-False}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
-      - OPENALEX_EMAIL=${OPENALEX_EMAIL:-athena@example.com}
+      - OPENALEX_EMAIL=${OPENALEX_EMAIL:-kalem.kasghar@example.com}
       - CORE_API_KEY=${CORE_API_KEY:-}
+      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-}
       - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq_broker:5672//
       - CELERY_RESULT_BACKEND=redis://redis_cache:6379/0
       - DATA_DIR=/data/library
     volumes:
-      - athena_library:/data/library
+      - kalem_library:/data/library
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -85,21 +86,26 @@ services:
       start_period: 40s
 
   celery_worker:
-    image: project-athena-backend:latest
-    container_name: athena_celery_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: kalem_celery_worker
     command: celery -A athena.core.celery_app worker --loglevel=info
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis_cache:6379/0
       - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq_broker:5672//
       - CELERY_RESULT_BACKEND=redis://redis_cache:6379/0
-      - UNPAYWALL_EMAIL=${OPENALEX_EMAIL:-athena@example.com}
+      - UNPAYWALL_EMAIL=${OPENALEX_EMAIL:-kalem.kasghar@example.com}
+      - OUTBOUND_PROXY=${OUTBOUND_PROXY:-}
       - DATA_DIR=/data/library
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - athena_library:/data/library
+      - kalem_library:/data/library
     restart: unless-stopped
     depends_on:
+      backend:
+        condition: service_healthy
       postgres_db:
         condition: service_healthy
       redis_cache:
@@ -111,7 +117,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: athena_frontend
+    container_name: kalem_frontend
     ports:
       - "3000:80"
     restart: unless-stopped
@@ -125,4 +131,4 @@ services:
 
 volumes:
   postgres_data:
-  athena_library:
+  kalem_library:

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from athena.core.config import get_settings
 from athena.models.library import DownloadStatus, LibraryEntry
+from athena.models.settings import UserSettings
 
 # User-Agent rotasyonu için liste
 USER_AGENTS = [
@@ -95,6 +96,7 @@ def download_paper_task(self, entry_id: int) -> dict:
     """
     settings = get_settings()
     db: Session = get_sync_db_session()
+    runtime_proxy_url = _resolve_runtime_proxy_url(db, settings.outbound_proxy)
 
     retry_info = f"(attempt {self.request.retries + 1}/{self.max_retries + 1})" if self.request.retries > 0 else ""
     logger.info(f"[Download] Starting entry_id={entry_id} {retry_info}")
@@ -133,7 +135,7 @@ def download_paper_task(self, entry_id: int) -> dict:
 
         # 5. PDF indir
         logger.info(f"[Download] Downloading: entry_id={entry_id} -> {file_path}")
-        _download_file(pdf_url, file_path)
+        _download_file(pdf_url, file_path, runtime_proxy_url)
 
         # 6. Dosya boyutunu kontrol et
         file_size = file_path.stat().st_size
@@ -141,21 +143,48 @@ def download_paper_task(self, entry_id: int) -> dict:
             logger.warning(f"[Download] Suspiciously small file ({file_size} bytes): entry_id={entry_id}")
 
         # 7. Başarılı: Status ve file_path güncelle
+        # file_path'i relative (paper_id/filename.pdf) sakla ki /files mount'u ile
+        # URL üretimi tutarlı olsun. (Eski kayitlar absolute olabilir.)
+        try:
+            stored_path = str(file_path.relative_to(settings.data_dir))
+        except ValueError:
+            stored_path = str(file_path)
+
         entry.download_status = DownloadStatus.COMPLETED
-        entry.file_path = str(file_path)
+        entry.file_path = stored_path
         db.commit()
 
         logger.info(f"[Download] Completed: entry_id={entry_id}, size={file_size} bytes, path={file_path}")
         return {
             "status": "completed",
             "entry_id": entry_id,
-            "file_path": str(file_path),
+            "file_path": stored_path,
             "file_size": file_size,
         }
 
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         error_type = type(e).__name__
         logger.warning(f"[Download] HTTP error: entry_id={entry_id}, type={error_type}, detail={e}")
+        try:
+            # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
+            if self.request.retries >= self.max_retries:
+                entry.download_status = DownloadStatus.FAILED
+                db.commit()
+                logger.error(f"[Download] Max retries reached, marked FAILED: entry_id={entry_id}")
+                return {
+                    "status": "failed",
+                    "entry_id": entry_id,
+                    "message": f"Max retries reached after HTTP error: {e}",
+                }
+
+            entry.download_status = DownloadStatus.PENDING
+            db.commit()
+            logger.info(
+                f"[Download] Marked pending for retry: entry_id={entry_id}, next_attempt={self.request.retries + 2}"
+            )
+        except Exception as mark_err:
+            logger.error(f"[Download] Could not update status after HTTP error: {mark_err}")
+
         # Celery otomatik retry yapacak
         raise
 
@@ -308,7 +337,24 @@ def _find_pdf_url(paper) -> str | None:
     return None
 
 
-def _download_file(url: str, file_path: Path) -> None:
+def _resolve_runtime_proxy_url(db: Session, fallback_proxy: str | None) -> str | None:
+    """DB'deki UserSettings'e gore guncel proxy URL'i belirler."""
+    try:
+        row = db.execute(select(UserSettings).order_by(UserSettings.id.asc())).scalar_one_or_none()
+    except Exception as exc:
+        logger.warning(f"[Download] Could not read user_settings for proxy: {exc}")
+        return fallback_proxy
+
+    if not row:
+        return fallback_proxy
+
+    if row.proxy_enabled and row.proxy_url:
+        return row.proxy_url
+
+    return None
+
+
+def _download_file(url: str, file_path: Path, proxy_url: str | None = None) -> None:
     """URL'den dosyayı indirir.
 
     Args:
@@ -323,7 +369,11 @@ def _download_file(url: str, file_path: Path) -> None:
         "Accept": "application/pdf,*/*",
     }
 
-    with httpx.Client(timeout=DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
+    client_kwargs: dict = {"timeout": DOWNLOAD_TIMEOUT, "follow_redirects": True}
+    if proxy_url:
+        client_kwargs["proxy"] = proxy_url
+
+    with httpx.Client(**client_kwargs) as client:
         with client.stream("GET", url, headers=headers) as response:
             response.raise_for_status()
 

@@ -5,10 +5,12 @@ import feedparser
 from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
+from athena.core.config import get_settings
 from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
 
 
 class ArxivProvider(BaseSearchProvider):
+    provider_id = "arxiv"
     """arXiv API adaptoru.
 
     Atom/XML formatinda yanit dondurur, feedparser ile parse edilir.
@@ -22,6 +24,10 @@ class ArxivProvider(BaseSearchProvider):
     BASE_URL = "http://export.arxiv.org/api/query"
     RESULTS_PER_PAGE = 100
     MAX_RESULTS = 1000
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.settings = get_settings()
 
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
         """arXiv API'den makale aramasi yapar.
@@ -37,7 +43,11 @@ class ArxivProvider(BaseSearchProvider):
         all_entries: list[dict] = []
 
         try:
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            client_kwargs: dict = {"timeout": 60.0, "follow_redirects": True}
+            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 start = 0
                 while start < self.MAX_RESULTS:
                     params = {

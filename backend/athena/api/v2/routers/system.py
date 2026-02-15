@@ -100,6 +100,7 @@ async def reset_system(request: ResetRequest):
         "papers",
         "authors",
         "tags",
+        "user_settings",
     ]
 
     async with engine.begin() as conn:

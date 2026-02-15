@@ -9,6 +9,7 @@ from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, Sear
 
 
 class CrossrefProvider(BaseSearchProvider):
+    provider_id = "crossref"
     """Crossref API adaptoru.
 
     REST API ile akademik makale metadata araması yapar.
@@ -26,6 +27,7 @@ class CrossrefProvider(BaseSearchProvider):
     MAX_RESULTS = 1000
 
     def __init__(self) -> None:
+        super().__init__()
         self.settings = get_settings()
 
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
@@ -37,14 +39,19 @@ class CrossrefProvider(BaseSearchProvider):
         Returns:
             Bulunan makalelerin listesi (hata durumunda bos liste)
         """
+        contact_email = self.runtime_contact_email or self.settings.openalex_email
         headers = {
-            "User-Agent": f"Athena/2.0 (mailto:{self.settings.openalex_email})",
+            "User-Agent": f"Kalem-Kasghar/1.0.0 (mailto:{contact_email})",
         }
 
         all_items: list[dict] = []
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            client_kwargs: dict = {"timeout": 60.0}
+            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 offset = 0
                 while offset < self.MAX_RESULTS:
                     params: dict[str, str | int] = {
