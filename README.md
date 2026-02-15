@@ -14,6 +14,7 @@ Kalem - Kasghar; akademik makale arama, kaynak birleştirme, PDF indirme, kütü
 8. [API Özeti](#api-özeti)
 9. [Geliştirme ve Test](#geliştirme-ve-test)
 10. [Sorun Giderme](#sorun-giderme)
+11. [Kullanılan Modeller ve Sağlayıcılar (Citation)](#kullanılan-modeller-ve-sağlayıcılar-citation)
 
 ## Özellikler
 
@@ -206,3 +207,34 @@ cd backend
 alembic heads
 alembic upgrade heads
 ```
+
+## Kullanılan Modeller ve Sağlayıcılar (Citation)
+
+Bu projede geliştirme sürecinde kullanılan AI asistanları ve uygulama içinde arama/indirme için kullanılan dış sağlayıcılar aşağıda belirtilmiştir.
+
+### 11.1 Geliştirme Sürecinde Kullanılan AI Modelleri
+
+- Claude (Anthropic) - planlama, dokümantasyon ve kod refactor süreçlerinde yardımcı model.
+- Codex (OpenAI) - kod üretimi, düzeltme, test ve entegrasyon süreçlerinde yardımcı model.
+- Gemini (Google) - alternatif çözüm üretimi ve karşılaştırmalı geliştirme desteği.
+
+### 11.2 Uygulamada Kullanılan Arama/İndirme Sağlayıcıları
+
+- Semantic Scholar API - akademik arama sonuçları.
+- OpenAlex API - akademik work/metadata araması.
+- arXiv API - preprint araması.
+- Crossref REST API - DOI/metadata araması.
+- CORE API - açık erişim içerik araması.
+- Unpaywall (opsiyonel/fallback akışı için referans) - DOI üzerinden açık erişim PDF tespiti.
+
+### 11.3 Citation / Referanslar
+
+1. Anthropic. (n.d.). *Claude*. [https://claude.ai](https://claude.ai)  
+2. OpenAI. (n.d.). *Codex*. [https://openai.com/codex](https://openai.com/codex)  
+3. Google. (n.d.). *Gemini*. [https://gemini.google.com](https://gemini.google.com)  
+4. Semantic Scholar. (n.d.). *Semantic Scholar API Documentation*. [https://api.semanticscholar.org/api-docs/](https://api.semanticscholar.org/api-docs/)  
+5. OpenAlex. (n.d.). *OpenAlex Documentation*. [https://docs.openalex.org/](https://docs.openalex.org/)  
+6. arXiv. (n.d.). *arXiv API*. [https://info.arxiv.org/help/api/](https://info.arxiv.org/help/api/)  
+7. Crossref. (n.d.). *REST API*. [https://api.crossref.org/](https://api.crossref.org/)  
+8. CORE. (n.d.). *CORE API Documentation*. [https://api.core.ac.uk/docs/v3](https://api.core.ac.uk/docs/v3)  
+9. Unpaywall. (n.d.). *Unpaywall Data/API*. [https://unpaywall.org/products/api](https://unpaywall.org/products/api)  
