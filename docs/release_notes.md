@@ -1,5 +1,21 @@
 # Release Notes
 
+## v1.0.2 (2026-02-15)
+
+### Fixed
+- Search result totals for multi-term queries are now more stable across repeated runs.
+- Added a retry path for arXiv low-result anomalies (for broad/multi-term queries) to reduce sudden drops like `107 -> 61`.
+
+### Investigation Summary
+- Query checked: `federated learning, sepsis` (`year_start=2020`, `year_end=2026`).
+- Intermittent result drop was observed from arXiv raw count fluctuations (`833` vs `83`) while other providers stayed stable.
+- Dedup/relevance math remained consistent; the volatility source was upstream provider response variability.
+
+### Technical Notes
+- Backend:
+  - `ArxivProvider.search` now retries once when a multi-term query returns unexpectedly low result count.
+  - Retry uses short backoff and preserves existing parsing/filter logic.
+
 ## v1.0.1-p1 (2026-02-15)
 
 ### Added

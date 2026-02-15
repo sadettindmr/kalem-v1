@@ -24,6 +24,8 @@ class ArxivProvider(BaseSearchProvider):
     BASE_URL = "http://export.arxiv.org/api/query"
     RESULTS_PER_PAGE = 100
     MAX_RESULTS = 1000
+    RETRY_ATTEMPTS = 2
+    LOW_RESULT_RETRY_THRESHOLD = 100
 
     def __init__(self) -> None:
         super().__init__()
@@ -47,39 +49,62 @@ class ArxivProvider(BaseSearchProvider):
             proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
             if proxy_url:
                 client_kwargs["proxy"] = proxy_url
-            async with httpx.AsyncClient(**client_kwargs) as client:
-                start = 0
-                while start < self.MAX_RESULTS:
-                    params = {
-                        "search_query": f"all:{filters.query}",
-                        "start": start,
-                        "max_results": self.RESULTS_PER_PAGE,
-                        "sortBy": "relevance",
-                        "sortOrder": "descending",
-                    }
 
-                    response = await client.get(self.BASE_URL, params=params)
-                    response.raise_for_status()
+            for attempt in range(1, self.RETRY_ATTEMPTS + 1):
+                all_entries = []
+                async with httpx.AsyncClient(**client_kwargs) as client:
+                    start = 0
+                    while start < self.MAX_RESULTS:
+                        params = {
+                            "search_query": f"all:{filters.query}",
+                            "start": start,
+                            "max_results": self.RESULTS_PER_PAGE,
+                            "sortBy": "relevance",
+                            "sortOrder": "descending",
+                        }
 
-                    feed = feedparser.parse(response.text)
-                    entries = feed.get("entries", [])
+                        response = await client.get(self.BASE_URL, params=params)
+                        response.raise_for_status()
 
-                    if not entries:
-                        break
+                        feed = feedparser.parse(response.text)
+                        entries = feed.get("entries", [])
 
-                    all_entries.extend(entries)
+                        if not entries:
+                            break
 
-                    # toplam sonuc sayisini kontrol et
-                    total_results = int(
-                        feed.get("feed", {}).get("opensearch_totalresults", "0")
+                        all_entries.extend(entries)
+
+                        # toplam sonuc sayisini kontrol et
+                        total_results = int(
+                            feed.get("feed", {}).get("opensearch_totalresults", "0")
+                        )
+                        if start + self.RESULTS_PER_PAGE >= total_results:
+                            break
+
+                        start += self.RESULTS_PER_PAGE
+
+                        # Rate limit onleme (arXiv nazik kullanim bekler)
+                        await asyncio.sleep(0.5)
+
+                # Bazı isteklerde arXiv beklenenden düşük kayıt dönebiliyor.
+                # Özellikle çok-terimli sorgularda tek sefer daha deneyerek sonucu stabilize et.
+                should_retry_for_low_count = self._should_retry_low_count(
+                    query=filters.query,
+                    result_count=len(all_entries),
+                    attempt=attempt,
+                )
+                if should_retry_for_low_count:
+                    logger.warning(
+                        "arXiv low-result anomaly detected (count={}) for query='{}'. Retrying ({}/{}).",
+                        len(all_entries),
+                        filters.query,
+                        attempt + 1,
+                        self.RETRY_ATTEMPTS,
                     )
-                    if start + self.RESULTS_PER_PAGE >= total_results:
-                        break
+                    await asyncio.sleep(1.0)
+                    continue
 
-                    start += self.RESULTS_PER_PAGE
-
-                    # Rate limit onleme (arXiv nazik kullanim bekler)
-                    await asyncio.sleep(0.5)
+                break
 
             logger.info(f"arXiv search: {len(all_entries)} results fetched")
             return self._parse_results(all_entries, filters)
@@ -97,6 +122,14 @@ class ArxivProvider(BaseSearchProvider):
         except Exception as e:
             logger.error(f"Unexpected error in arXiv search: {e}")
             return []
+
+    def _should_retry_low_count(self, query: str, result_count: int, attempt: int) -> bool:
+        multi_term_query = len(query.split()) >= 2
+        return (
+            multi_term_query
+            and result_count < self.LOW_RESULT_RETRY_THRESHOLD
+            and attempt < self.RETRY_ATTEMPTS
+        )
 
     @staticmethod
     def _extract_arxiv_id(entry_id: str) -> str:

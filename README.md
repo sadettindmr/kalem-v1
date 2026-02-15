@@ -1,4 +1,4 @@
-# Kalem v1.0.1 - Kasghar
+# Kalem v1.0.2 - Kasghar
 
 Kalem - Kasghar; akademik makale arama, kaynak birleştirme, PDF indirme, kütüphane yönetimi, dışa aktarma ve arşivleme için geliştirilmiş bir uygulamadır.
 
@@ -209,6 +209,16 @@ alembic heads
 alembic upgrade heads
 ```
 
+### 5) Aynı arama farklı toplam dönüyor
+
+- Dış sağlayıcılar (özellikle arXiv) anlık olarak değişken ham sonuç döndürebilir.
+- `v1.0.2` ile arXiv düşük-sonuç anomalileri için otomatik retry eklendi.
+- Teşhis için sol panelde şu akışı kontrol edin:
+  - `Ham kaynak sonuçları`
+  - `Alaka dışı elenen`
+  - `Mükerrer elenen`
+  - `Toplam`
+
 ## Kullanılan Modeller ve Sağlayıcılar (Citation)
 
 Bu projede geliştirme sürecinde kullanılan AI asistanları ve uygulama içinde arama/indirme için kullanılan dış sağlayıcılar aşağıda belirtilmiştir.
@@ -242,4 +252,4 @@ Bu projede geliştirme sürecinde kullanılan AI asistanları ve uygulama içind
 
 ## Release Notes
 
-- `v1.0.1`: `docs/release_notes.md`
+- `v1.0.2`: `docs/release_notes.md`
