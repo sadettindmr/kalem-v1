@@ -36,6 +36,7 @@ export interface SearchMeta {
   raw_arxiv: number;
   raw_crossref: number;
   raw_core: number;
+  relevance_removed: number;
   duplicates_removed: number;
   total: number;
 }

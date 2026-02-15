@@ -54,6 +54,7 @@ class SearchMeta(BaseModel):
     raw_arxiv: int = Field(default=0, description="arXiv ham sonuc sayisi")
     raw_crossref: int = Field(default=0, description="Crossref ham sonuc sayisi")
     raw_core: int = Field(default=0, description="CORE ham sonuc sayisi")
+    relevance_removed: int = Field(default=0, description="Alaka disi oldugu icin elenen sonuc sayisi")
     duplicates_removed: int = Field(default=0, description="Elenen mukerrer sonuc sayisi")
     total: int = Field(default=0, description="Dedup sonrasi toplam sonuc sayisi")
     errors: list[str] = Field(default_factory=list, description="Hata veren kaynak bilgileri")

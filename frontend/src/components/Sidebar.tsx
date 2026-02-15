@@ -173,6 +173,14 @@ export default function Sidebar() {
                     <Badge variant="outline" className="text-xs h-5">{searchMeta.raw_core}</Badge>
                   </div>
                 )}
+                {searchMeta && searchMeta.relevance_removed > 0 && (
+                  <div className="flex items-center justify-between text-amber-600">
+                    <span>Alaka disi elenen</span>
+                    <Badge variant="outline" className="text-xs h-5 text-amber-600 border-amber-300">
+                      -{searchMeta.relevance_removed}
+                    </Badge>
+                  </div>
+                )}
                 {/* Mukerrer bilgisi */}
                 {searchMeta && searchMeta.duplicates_removed > 0 && (
                   <div className="flex items-center justify-between text-orange-500">

@@ -67,6 +67,7 @@ class SearchService:
                     raw_arxiv=0,
                     raw_crossref=0,
                     raw_core=0,
+                    relevance_removed=0,
                     duplicates_removed=0,
                     total=0,
                     errors=["No enabled providers configured"],
@@ -143,6 +144,7 @@ class SearchService:
 
         meta = SearchMeta(
             **raw_counts,
+            relevance_removed=relevance_removed,
             duplicates_removed=duplicates_removed,
             total=len(unique_papers),
             errors=errors,
