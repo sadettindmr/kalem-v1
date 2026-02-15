@@ -1,0 +1,36 @@
+# Backend Dockerfile
+# Python FastAPI uygulaması
+
+FROM python:3.11-slim
+
+# Ortam değişkenleri
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=1.8.5 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false
+
+# Sistem bağımlılıkları (curl healthcheck için)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Poetry kurulumu
+RUN pip install "poetry==$POETRY_VERSION"
+
+WORKDIR /app
+
+# Poetry dosyalarını kopyala
+COPY backend/pyproject.toml backend/poetry.lock* ./
+
+# Bağımlılıkları yükle
+RUN poetry install --no-interaction --no-ansi --no-root
+
+# Kaynak kodları kopyala
+COPY backend/ ./
+
+# Port
+EXPOSE 8000
+
+# Uygulama başlat
+CMD ["uvicorn", "athena.main:app", "--host", "0.0.0.0", "--port", "8000"]
