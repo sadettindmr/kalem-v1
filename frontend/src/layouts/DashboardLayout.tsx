@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useUIStore } from '@/stores/ui-store';
+import { APP_NAME, APP_VERSION } from '@/constants/app';
 import Sidebar from '@/components/Sidebar';
 import PaperList from '@/components/PaperList';
 import LibraryList from '@/components/LibraryList';
@@ -34,7 +35,10 @@ export default function DashboardLayout() {
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <span className="text-primary-foreground font-bold text-lg">K</span>
           </div>
-          <h1 className="text-xl font-semibold">Kalem - Kasghar</h1>
+          <div className="leading-tight">
+            <h1 className="text-xl font-semibold">{APP_NAME}</h1>
+            <p className="text-xs text-muted-foreground">{APP_VERSION}</p>
+          </div>
         </div>
 
         {/* Sag: Ayarlar */}
