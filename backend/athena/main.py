@@ -20,7 +20,7 @@ setup_logging()
 app = FastAPI(
     title="Kalem - Kasghar",
     description="Modular Monolith Backend API",
-    version="1.0.1",
+    version="1.0.2",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -248,6 +248,6 @@ async def root():
     """Root endpoint."""
     return {
         "message": "Kalem - Kasghar API",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "docs": "/docs",
     }
