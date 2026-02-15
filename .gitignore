@@ -144,3 +144,11 @@ coverage/
 # Credential files
 credentials.json
 service-account.json
+
+# ===========================================
+# Local AI Notes / Sprint Notes (keep local)
+# ===========================================
+CLAUDE.md
+GEMINI.md
+docs/Codex.md
+docs/sprint*.md
