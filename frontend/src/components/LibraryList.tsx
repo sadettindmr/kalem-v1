@@ -3,7 +3,7 @@
  * useQuery ile GET /api/v2/library + refetchInterval: 5000
  */
 
-import { Archive, Library, Loader2, RefreshCw, FolderOpen } from 'lucide-react';
+import { Archive, Library, Loader2, RefreshCw, FolderOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -44,13 +44,27 @@ export default function LibraryList() {
     selectedCollectionId,
   } = useUIStore();
 
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedEntryIds, setSelectedEntryIds] = useState<Set<number>>(new Set());
   const [showCollectionDialog, setShowCollectionDialog] = useState(false);
+  const pageLimit = 100;
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['library', libraryFilterTag, libraryFilterStatus, libraryFilterMinCitations, libraryFilterYearStart, libraryFilterYearEnd, libraryFilterSearch, selectedCollectionId],
+    queryKey: [
+      'library',
+      currentPage,
+      pageLimit,
+      libraryFilterTag,
+      libraryFilterStatus,
+      libraryFilterMinCitations,
+      libraryFilterYearStart,
+      libraryFilterYearEnd,
+      libraryFilterSearch,
+      selectedCollectionId,
+    ],
     queryFn: () => fetchLibrary({
-      limit: 100,
+      page: currentPage,
+      limit: pageLimit,
       tag: libraryFilterTag || undefined,
       status: libraryFilterStatus || undefined,
       min_citations: libraryFilterMinCitations ?? undefined,
@@ -85,6 +99,7 @@ export default function LibraryList() {
 
   const entries = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageLimit));
   const selectionCount = selectedEntryIds.size;
   const allSelected = entries.length > 0 && entries.every((entry) => selectedEntryIds.has(entry.id));
   const hasRetryable =
@@ -121,6 +136,22 @@ export default function LibraryList() {
       return next;
     });
   }, [data?.items]);
+
+  useEffect(() => {
+    setSelectedEntryIds((prev) => (prev.size === 0 ? prev : new Set()));
+  }, [currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    libraryFilterTag,
+    libraryFilterStatus,
+    libraryFilterMinCitations,
+    libraryFilterYearStart,
+    libraryFilterYearEnd,
+    libraryFilterSearch,
+    selectedCollectionId,
+  ]);
 
   const handleToggleSelect = (entryId: number) => {
     setSelectedEntryIds((prev) => {
@@ -231,22 +262,49 @@ export default function LibraryList() {
           )}
 
           {/* Success State */}
-            {!isLoading && entries.length > 0 && (
-              <>
-                {entries.map((entry) => (
-                  <LibraryItem
-                    key={entry.id}
-                    entry={entry}
-                    isSelected={selectedPaperId === `library-${entry.id}`}
-                    onClick={() => setSelectedPaperId(`library-${entry.id}`)}
-                    isChecked={selectedEntryIds.has(entry.id)}
-                    onToggleSelect={() => handleToggleSelect(entry.id)}
-                  />
-                ))}
-              </>
-            )}
+          {!isLoading && entries.length > 0 && (
+            <>
+              {entries.map((entry) => (
+                <LibraryItem
+                  key={entry.id}
+                  entry={entry}
+                  isSelected={selectedPaperId === `library-${entry.id}`}
+                  onClick={() => setSelectedPaperId(`library-${entry.id}`)}
+                  isChecked={selectedEntryIds.has(entry.id)}
+                  onToggleSelect={() => handleToggleSelect(entry.id)}
+                />
+              ))}
+            </>
+          )}
         </div>
       </ScrollArea>
+
+      {/* Pagination Controls */}
+      {!isLoading && totalPages > 1 && (
+        <div className="h-12 border-t flex items-center justify-between px-4 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Onceki
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {currentPage} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage >= totalPages}
+          >
+            Sonraki
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      )}
 
       {selectionCount > 0 && (
         <CollectionPickerDialog
