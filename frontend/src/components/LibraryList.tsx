@@ -107,16 +107,20 @@ export default function LibraryList() {
   };
 
   useEffect(() => {
-    if (entries.length === 0) {
-      setSelectedEntryIds(new Set());
+    const currentEntries = data?.items;
+    if (!currentEntries || currentEntries.length === 0) {
+      setSelectedEntryIds((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
     setSelectedEntryIds((prev) => {
-      const validIds = new Set(entries.map((entry) => entry.id));
+      const validIds = new Set(currentEntries.map((entry) => entry.id));
       const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      if (next.size === prev.size && Array.from(next).every((id) => prev.has(id))) {
+        return prev;
+      }
       return next;
     });
-  }, [entries]);
+  }, [data?.items]);
 
   const handleToggleSelect = (entryId: number) => {
     setSelectedEntryIds((prev) => {
