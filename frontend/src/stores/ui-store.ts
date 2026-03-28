@@ -28,6 +28,7 @@ type State = {
   libraryFilterYearStart: number | null;
   libraryFilterYearEnd: number | null;
   libraryFilterSearch: string;
+  selectedCollectionId: number | null;
 };
 
 type Actions = {
@@ -53,6 +54,7 @@ type Actions = {
   setLibraryFilterYearStart: (value: number | null) => void;
   setLibraryFilterYearEnd: (value: number | null) => void;
   setLibraryFilterSearch: (value: string) => void;
+  setSelectedCollectionId: (id: number | null) => void;
 };
 
 export const useUIStore = create<State & Actions>((set) => ({
@@ -76,6 +78,7 @@ export const useUIStore = create<State & Actions>((set) => ({
   libraryFilterYearStart: null,
   libraryFilterYearEnd: null,
   libraryFilterSearch: '',
+  selectedCollectionId: null,
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   setActiveTab: (tab) => set({ activeTab: tab, selectedPaperId: null }),
   setSelectedPaperId: (id) => set({ selectedPaperId: id }),
@@ -120,4 +123,5 @@ export const useUIStore = create<State & Actions>((set) => ({
   setLibraryFilterYearStart: (value) => set({ libraryFilterYearStart: value }),
   setLibraryFilterYearEnd: (value) => set({ libraryFilterYearEnd: value }),
   setLibraryFilterSearch: (value) => set({ libraryFilterSearch: value }),
+  setSelectedCollectionId: (id) => set({ selectedCollectionId: id }),
 }));

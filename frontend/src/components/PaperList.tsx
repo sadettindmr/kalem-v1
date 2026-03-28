@@ -22,6 +22,7 @@ import {
 import { useUIStore } from '@/stores/ui-store';
 import { bulkIngestPapers } from '@/services/library';
 import PaperCard from '@/components/PaperCard';
+import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 
 const BATCH_SIZE = 100;
 
@@ -66,6 +67,8 @@ export default function PaperList() {
   // Add All dialog state
   const [showAddAllDialog, setShowAddAllDialog] = useState(false);
   const [addAllProgress, setAddAllProgress] = useState<{ current: number; total: number } | null>(null);
+  const [showBulkCollectionDialog, setShowBulkCollectionDialog] = useState(false);
+  const [bulkEntryIds, setBulkEntryIds] = useState<number[]>([]);
 
   // Client-side filtreleme
   const filteredResults = useMemo(() => {
@@ -122,6 +125,11 @@ export default function PaperList() {
 
       clearSelection();
       queryClient.invalidateQueries({ queryKey: ['library'] });
+
+      if (data.entry_ids.length > 0) {
+        setBulkEntryIds(data.entry_ids);
+        setShowBulkCollectionDialog(true);
+      }
     },
     onError: () => {
       toast.error('Toplu kaydetme sirasinda hata olustu');
@@ -159,6 +167,7 @@ export default function PaperList() {
     let totalDuplicate = 0;
     let totalFailed = 0;
     const allSavedIds: string[] = [];
+    const allEntryIds: number[] = [];
 
     // Batch'ler halinde gonder
     const totalBatches = Math.ceil(totalPapers / BATCH_SIZE);
@@ -176,6 +185,9 @@ export default function PaperList() {
         totalAdded += result.added_count;
         totalDuplicate += result.duplicate_count;
         totalFailed += result.failed_count;
+        if (result.entry_ids.length > 0) {
+          allEntryIds.push(...result.entry_ids);
+        }
 
         // Kaydedilen ID'leri topla
         const batchIds = batch
@@ -203,6 +215,11 @@ export default function PaperList() {
     }
     clearSelection();
     queryClient.invalidateQueries({ queryKey: ['library'] });
+
+    if (allEntryIds.length > 0) {
+      setBulkEntryIds(allEntryIds);
+      setShowBulkCollectionDialog(true);
+    }
   }, [filteredResults, lastSearchQuery, addSavedPaperIds, clearSelection, queryClient]);
 
   const isAddAllRunning = addAllProgress !== null;
@@ -378,6 +395,20 @@ export default function PaperList() {
             <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
+      )}
+
+      {bulkEntryIds.length > 0 && (
+        <CollectionPickerDialog
+          open={showBulkCollectionDialog}
+          onOpenChange={(open) => {
+            setShowBulkCollectionDialog(open);
+            if (!open) {
+              setBulkEntryIds([]);
+            }
+          }}
+          entryIds={bulkEntryIds}
+          mode="bulk"
+        />
       )}
     </div>
   );

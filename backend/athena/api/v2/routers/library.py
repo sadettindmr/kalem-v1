@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 from athena.core.database import get_db
 from athena.core.config import get_settings
 from athena.core.file_paths import resolve_data_file_path, to_relative_data_path
+from athena.models.associations import collection_entries
 from athena.models.author import Author
 from athena.models.library import DownloadStatus, LibraryEntry
 from athena.models.paper import Paper
@@ -41,9 +42,19 @@ def _apply_library_filters(
     year_start: Optional[int] = None,
     year_end: Optional[int] = None,
     search: Optional[str] = None,
+    collection_id: Optional[int] = None,
 ):
     """Library listeleme ve ZIP indirme endpointleri icin ortak filtre uygulayici."""
     query = query.join(LibraryEntry.paper)
+
+    if collection_id is not None:
+        query = query.where(
+            LibraryEntry.id.in_(
+                select(collection_entries.c.entry_id).where(
+                    collection_entries.c.collection_id == collection_id
+                )
+            )
+        )
 
     if status:
         try:
@@ -227,24 +238,10 @@ async def list_library(
     year_start: Optional[int] = Query(default=None, ge=1900, le=2100, description="Başlangıç yılı"),
     year_end: Optional[int] = Query(default=None, ge=1900, le=2100, description="Bitiş yılı"),
     search: Optional[str] = Query(default=None, description="Başlık, yazar veya etiket araması"),
+    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> LibraryListResponse:
-    """Kütüphanedeki makaleleri listeler.
-
-    Args:
-        page: Sayfa numarası (1'den başlar)
-        limit: Sayfa başına öğe sayısı (max 100)
-        tag: Opsiyonel etiket filtresi
-        status: Opsiyonel indirme durumu filtresi
-        min_citations: Opsiyonel minimum atıf filtresi
-        year_start: Opsiyonel başlangıç yılı filtresi
-        year_end: Opsiyonel bitiş yılı filtresi
-        search: Opsiyonel anahtar kelime araması (başlık, yazar, etiket)
-        db: Veritabanı oturumu
-
-    Returns:
-        Sayfalanmış kütüphane listesi
-    """
+    """Kütüphanedeki makaleleri listeler."""
     service = LibraryService(db)
     entries, total = await service.get_library_entries(
         page=page,
@@ -255,6 +252,7 @@ async def list_library(
         year_start=year_start,
         year_end=year_end,
         search=search,
+        collection_id=collection_id,
     )
 
     # "completed" kayitlarin file_path degerini normalize et ve
@@ -327,6 +325,7 @@ async def download_zip_archive(
     year_start: Optional[int] = Query(default=None, ge=1900, le=2100, description="Baslangic yili"),
     year_end: Optional[int] = Query(default=None, ge=1900, le=2100, description="Bitis yili"),
     search: Optional[str] = Query(default=None, description="Baslik, yazar veya etiket aramasi"),
+    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Filtrelenmis ve indirilmeye hazir PDF dosyalarini ZIP olarak dondurur."""
@@ -342,6 +341,7 @@ async def download_zip_archive(
         year_start=year_start,
         year_end=year_end,
         search=search,
+        collection_id=collection_id,
     ).order_by(LibraryEntry.id.desc())
 
     result = await db.execute(query)
@@ -529,22 +529,15 @@ async def export_library(
         default=None,
         description="Etiket filtresi (virgülle ayrılmış)",
     ),
+    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Kütüphane verilerini CSV veya XLSX formatında dışa aktarır.
-
-    Args:
-        format: Çıktı formatı ("csv" veya "xlsx", varsayılan: xlsx)
-        search_query: Opsiyonel etiket filtresi (virgülle ayrılmış)
-        db: Veritabanı oturumu
-
-    Returns:
-        StreamingResponse: Dosya içeriği
-    """
+    """Kütüphane verilerini CSV veya XLSX formatında dışa aktarır."""
     service = ExportService(db)
     buffer, content_type, filename = await service.export_library(
         format=format,
         search_query=search_query,
+        collection_id=collection_id,
     )
 
     logger.info(f"Library exported: format={format}, filename={filename}")

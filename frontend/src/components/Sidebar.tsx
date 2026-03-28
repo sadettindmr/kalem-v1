@@ -3,19 +3,22 @@
  * Search ve Library sekmeleri + SearchForm + Sonuc Istatistikleri + Filtreler
  */
 
-import { useMemo } from 'react';
-import { Search, Library, Tag, Filter, BarChart3, Calendar, BookOpen } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { Search, Library, Tag, Filter, BarChart3, Calendar, BookOpen, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import SearchForm from '@/components/SearchForm';
 import { fetchLibrary } from '@/services/library';
+import { fetchCollections, createCollection, deleteCollection } from '@/services/collections';
 
 interface NavItem {
   id: 'search' | 'library';
@@ -45,6 +48,7 @@ const statusFilters = [
 ];
 
 export default function Sidebar() {
+  const queryClient = useQueryClient();
   const {
     activeTab,
     setActiveTab,
@@ -68,13 +72,46 @@ export default function Sidebar() {
     setSearchFilterOpenAccess,
     searchFilterSource,
     setSearchFilterSource,
+    selectedCollectionId,
+    setSelectedCollectionId,
   } = useUIStore();
+
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
 
   // Library'deki tag'leri almak icin library verisi
   const { data: libraryData } = useQuery({
     queryKey: ['library', null, null],
     queryFn: () => fetchLibrary({ limit: 100 }),
     enabled: activeTab === 'library',
+  });
+
+  // Koleksiyonlari cek
+  const { data: collectionsData } = useQuery({
+    queryKey: ['collections'],
+    queryFn: fetchCollections,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (name: string) => createCollection(name),
+    onSuccess: () => {
+      toast.success('Koleksiyon olusturuldu');
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+      setShowNewCollection(false);
+      setNewCollectionName('');
+    },
+    onError: () => {
+      toast.error('Koleksiyon olusturulamadi');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteCollection(id),
+    onSuccess: () => {
+      toast.success('Koleksiyon silindi');
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+      if (selectedCollectionId) setSelectedCollectionId(null);
+    },
   });
 
   // Tag listesini library verilerinden cikar
@@ -287,6 +324,91 @@ export default function Sidebar() {
                 </label>
               </div>
             </div>
+          </>
+        )}
+
+        {/* Projelerim - Sadece library tabinda goster */}
+        {activeTab === 'library' && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Projelerim
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setShowNewCollection(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge
+                  variant={!selectedCollectionId ? 'default' : 'outline'}
+                  className="cursor-pointer text-xs"
+                  onClick={() => setSelectedCollectionId(null)}
+                >
+                  Tum Makaleler
+                </Badge>
+                {collectionsData?.items?.map((col) => (
+                  <Badge
+                    key={col.id}
+                    variant={selectedCollectionId === col.id ? 'default' : 'outline'}
+                    className="cursor-pointer text-xs gap-1 group"
+                    onClick={() => setSelectedCollectionId(col.id)}
+                  >
+                    {col.name}
+                    {col.entry_count > 0 && (
+                      <span className="text-muted-foreground">({col.entry_count})</span>
+                    )}
+                    <Trash2
+                      className="h-3 w-3 opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMutation.mutate(col.id);
+                      }}
+                    />
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Yeni Koleksiyon Dialog */}
+            <Dialog open={showNewCollection} onOpenChange={setShowNewCollection}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Yeni Proje Olustur</DialogTitle>
+                </DialogHeader>
+                <Input
+                  placeholder="Proje adi (ornek: Tez Literaturu)"
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newCollectionName.trim()) {
+                      createMutation.mutate(newCollectionName.trim());
+                    }
+                  }}
+                />
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowNewCollection(false)}
+                  >
+                    Iptal
+                  </Button>
+                  <Button
+                    disabled={!newCollectionName.trim() || createMutation.isPending}
+                    onClick={() => createMutation.mutate(newCollectionName.trim())}
+                  >
+                    Olustur
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
 

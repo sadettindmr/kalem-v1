@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { enrichMetadata, fetchDownloadStats, retryDownloads } from '@/services/library';
 import { fetchSettings, updateSettings } from '@/services/settings';
+import { useUIStore } from '@/stores/ui-store';
 import type { UserSettingsResponse } from '@/types/api';
 
 import { Badge } from '@/components/ui/badge';
@@ -105,6 +106,7 @@ function toFormState(settings: UserSettingsResponse): SettingsFormState {
 export default function Settings() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { selectedCollectionId } = useUIStore();
 
   const [form, setForm] = useState<SettingsFormState | null>(null);
   const [initialFormJson, setInitialFormJson] = useState('');
@@ -235,9 +237,22 @@ export default function Settings() {
     }
   };
 
-  const handleExportXlsx = () => window.open('/api/v2/library/export?format=xlsx', '_blank');
-  const handleExportCsv = () => window.open('/api/v2/library/export?format=csv', '_blank');
-  const handleExportZip = () => window.open('/api/v2/library/download-zip', '_blank');
+  const handleExportXlsx = () => {
+    const params = new URLSearchParams({ format: 'xlsx' });
+    if (selectedCollectionId != null) params.set('collection_id', String(selectedCollectionId));
+    window.open(`/api/v2/library/export?${params.toString()}`, '_blank');
+  };
+  const handleExportCsv = () => {
+    const params = new URLSearchParams({ format: 'csv' });
+    if (selectedCollectionId != null) params.set('collection_id', String(selectedCollectionId));
+    window.open(`/api/v2/library/export?${params.toString()}`, '_blank');
+  };
+  const handleExportZip = () => {
+    const params = new URLSearchParams();
+    if (selectedCollectionId != null) params.set('collection_id', String(selectedCollectionId));
+    const query = params.toString();
+    window.open(`/api/v2/library/download-zip${query ? `?${query}` : ''}`, '_blank');
+  };
 
   const isSettingsChanged = form !== null && JSON.stringify(form) !== initialFormJson;
 

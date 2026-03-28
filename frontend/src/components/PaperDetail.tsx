@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { BookOpen, ExternalLink, Calendar, Users, Quote, Tag, Save, Loader2, Check, FileText } from 'lucide-react';
+import { BookOpen, ExternalLink, Calendar, Users, Quote, Tag, Save, Loader2, Check, FileText, FolderOpen } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,12 +14,14 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useUIStore } from '@/stores/ui-store';
 import { fetchLibrary, ingestPaper } from '@/services/library';
+import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 import type { PaperResponse } from '@/types/api';
 
 export default function PaperDetail() {
   const { selectedPaperId, searchResults, activeTab, lastSearchQuery } = useUIStore();
   const queryClient = useQueryClient();
   const [isPdfViewerVisible, setIsPdfViewerVisible] = useState(false);
+  const [showCollectionDialog, setShowCollectionDialog] = useState(false);
 
   // Library verisi
   const { data: libraryData } = useQuery({
@@ -43,6 +45,7 @@ export default function PaperDetail() {
   let downloadStatus: string | null = null;
   let filePath: string | null = null;
   let errorMessage: string | null = null;
+  let libraryEntryId: number | null = null;
 
   if (selectedPaperId?.startsWith('library-')) {
     const entryId = Number(selectedPaperId.replace('library-', ''));
@@ -63,6 +66,7 @@ export default function PaperDetail() {
       downloadStatus = entry.download_status;
       filePath = entry.file_path;
       errorMessage = entry.error_message;
+      libraryEntryId = entry.id;
     }
   } else {
     selectedPaper = searchResults.find(
@@ -165,7 +169,8 @@ export default function PaperDetail() {
                 )}
                 <Badge variant="secondary">{selectedPaper.source}</Badge>
                 {downloadStatus && (
-                  <Badge variant={downloadStatus === 'completed' ? 'default' : 'outline'} className="gap-1">
+                  <Badge variant={downloadStatus === 'completed' ? 'default' : 'outline'} className="gap-1"
+                    title={downloadStatus === 'failed' && errorMessage ? errorMessage : undefined}>
                     {downloadStatus === 'completed' ? 'Hazir' : downloadStatus === 'pending' ? 'Bekliyor' : downloadStatus === 'downloading' ? 'Indiriliyor' : 'Hata'}
                   </Badge>
                 )}
@@ -245,6 +250,18 @@ export default function PaperDetail() {
                   </Button>
                 )}
 
+                {/* Projeye Ekle - sadece library'den secilmis makalelerde */}
+                {libraryEntryId && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={() => setShowCollectionDialog(true)}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Projeye Ekle / Yonet
+                  </Button>
+                )}
+
                 {/* PDF Ac - status completed ise */}
                 {pdfEmbedUrl && (
                   <Button
@@ -319,6 +336,16 @@ export default function PaperDetail() {
           )}
         </div>
       </ScrollArea>
+
+      {/* Collection Picker Dialog */}
+      {libraryEntryId && (
+        <CollectionPickerDialog
+          open={showCollectionDialog}
+          onOpenChange={setShowCollectionDialog}
+          entryIds={[libraryEntryId]}
+          mode="single"
+        />
+      )}
     </div>
   );
 }

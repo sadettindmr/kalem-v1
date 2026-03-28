@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from athena.models.author import Author
+from athena.models.associations import collection_entries
 from athena.models.library import DownloadStatus, LibraryEntry, SourceType
 from athena.models.paper import Paper
 from athena.models.tag import Tag
@@ -65,6 +66,7 @@ class LibraryService:
         year_start: int | None = None,
         year_end: int | None = None,
         search: str | None = None,
+        collection_id: int | None = None,
     ) -> tuple[list[LibraryEntry], int]:
         """Kutuphane kayitlarini filtreleyerek getirir.
 
@@ -75,6 +77,15 @@ class LibraryService:
             joinedload(LibraryEntry.tags),
         )
         query = query.join(LibraryEntry.paper)
+
+        if collection_id is not None:
+            query = query.where(
+                LibraryEntry.id.in_(
+                    select(collection_entries.c.entry_id).where(
+                        collection_entries.c.collection_id == collection_id
+                    )
+                )
+            )
 
         if status:
             try:

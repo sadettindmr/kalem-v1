@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from athena.models.associations import collection_entries
 from athena.models.library import LibraryEntry
 from athena.models.tag import Tag
 
@@ -30,18 +31,11 @@ class ExportService:
         self,
         format: Literal["csv", "xlsx"] = "xlsx",
         search_query: str | None = None,
+        collection_id: int | None = None,
     ) -> tuple[BytesIO, str, str]:
-        """Kütüphane verilerini belirtilen formatta dışa aktarır.
-
-        Args:
-            format: Çıktı formatı ("csv" veya "xlsx")
-            search_query: Opsiyonel etiket filtresi
-
-        Returns:
-            Tuple: (dosya içeriği, content_type, dosya adı)
-        """
+        """Kütüphane verilerini belirtilen formatta dışa aktarır."""
         # 1. Veritabanından verileri çek
-        entries = await self._fetch_library_entries(search_query)
+        entries = await self._fetch_library_entries(search_query, collection_id)
 
         # 2. DataFrame oluştur
         df = self._create_dataframe(entries)
@@ -55,24 +49,28 @@ class ExportService:
             return self._export_xlsx(df)
 
     async def _fetch_library_entries(
-        self, search_query: str | None = None
+        self,
+        search_query: str | None = None,
+        collection_id: int | None = None,
     ) -> list[LibraryEntry]:
-        """Filtrelenmiş kütüphane girişlerini veritabanından çeker.
-
-        Args:
-            search_query: Opsiyonel etiket filtresi
-
-        Returns:
-            LibraryEntry listesi
-        """
+        """Filtrelenmiş kütüphane girişlerini veritabanından çeker."""
         query = select(LibraryEntry).options(
             joinedload(LibraryEntry.paper),
             joinedload(LibraryEntry.tags),
         )
 
+        # Koleksiyon filtresi
+        if collection_id is not None:
+            query = query.where(
+                LibraryEntry.id.in_(
+                    select(collection_entries.c.entry_id).where(
+                        collection_entries.c.collection_id == collection_id
+                    )
+                )
+            )
+
         # Tag filtresi (search_query varsa)
         if search_query:
-            # Virgülle ayrılmış tag'leri al
             tag_names = [t.strip().lower() for t in search_query.split(",") if t.strip()]
             if tag_names:
                 query = query.join(LibraryEntry.tags).where(Tag.name.in_(tag_names))

@@ -7,6 +7,7 @@ import { Loader2, Check, Clock, AlertCircle, Trash2, Quote } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { LibraryEntry } from '@/types/api';
 
@@ -15,6 +16,8 @@ interface LibraryItemProps {
   isSelected: boolean;
   onClick: () => void;
   onDelete?: (id: number) => void;
+  isChecked?: boolean;
+  onToggleSelect?: () => void;
 }
 
 const statusConfig = {
@@ -44,7 +47,14 @@ const statusConfig = {
   },
 };
 
-export default function LibraryItem({ entry, isSelected, onClick, onDelete }: LibraryItemProps) {
+export default function LibraryItem({
+  entry,
+  isSelected,
+  onClick,
+  onDelete,
+  isChecked,
+  onToggleSelect,
+}: LibraryItemProps) {
   const { paper } = entry;
   const status = statusConfig[entry.download_status];
   const StatusIcon = status.icon;
@@ -64,6 +74,14 @@ export default function LibraryItem({ entry, isSelected, onClick, onDelete }: Li
       <CardContent className="p-4 space-y-2">
         {/* Üst kısım: Başlık + Sil butonu */}
         <div className="flex items-start gap-2">
+          {onToggleSelect && (
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={() => onToggleSelect()}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-1 shrink-0"
+            />
+          )}
           <h3 className="font-medium leading-tight line-clamp-2 flex-1">
             {paper.title}
           </h3>
