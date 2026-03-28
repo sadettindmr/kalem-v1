@@ -15,6 +15,7 @@ interface LibraryParams {
   year_start?: number;
   year_end?: number;
   search?: string;
+  collection_id?: number;
 }
 
 /**
@@ -30,6 +31,7 @@ export async function fetchLibrary(params: LibraryParams = {}): Promise<LibraryL
   if (params.year_start != null) searchParams.set('year_start', String(params.year_start));
   if (params.year_end != null) searchParams.set('year_end', String(params.year_end));
   if (params.search) searchParams.set('search', params.search);
+  if (params.collection_id != null) searchParams.set('collection_id', String(params.collection_id));
 
   const query = searchParams.toString();
   return api.get<never, LibraryListResponse>(`/library${query ? `?${query}` : ''}`);

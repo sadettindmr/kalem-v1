@@ -3,6 +3,7 @@
  * Title, Authors, Year, Venue, Citation Badge, Kutuphaneme Ekle butonu
  */
 
+import { useState } from 'react';
 import { Plus, Loader2, Check } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { ingestPaper } from '@/services/library';
+import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 import { useUIStore } from '@/stores/ui-store';
 import type { PaperResponse } from '@/types/api';
 
@@ -26,6 +28,8 @@ interface PaperCardProps {
 export default function PaperCard({ paper, isSelected, onClick, isChecked, onToggleSelect }: PaperCardProps) {
   const { lastSearchQuery, savedPaperIds, addSavedPaperIds } = useUIStore();
   const queryClient = useQueryClient();
+  const [showCollectionDialog, setShowCollectionDialog] = useState(false);
+  const [newEntryId, setNewEntryId] = useState<number | null>(null);
 
   // Ilk 3 yazar
   const displayAuthors = paper.authors.slice(0, 3);
@@ -37,13 +41,15 @@ export default function PaperCard({ paper, isSelected, onClick, isChecked, onTog
   // Ingest mutation
   const ingestMutation = useMutation({
     mutationFn: ingestPaper,
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success('Makale kutuphaneme eklendi');
       queryClient.invalidateQueries({ queryKey: ['library'] });
       // Saved state'i guncelle
       if (paper.external_id) {
         addSavedPaperIds([paper.external_id]);
       }
+      setNewEntryId(data.entry_id);
+      setShowCollectionDialog(true);
     },
     onError: () => {
       toast.error('Makale eklenirken hata olustu');
@@ -61,45 +67,46 @@ export default function PaperCard({ paper, isSelected, onClick, isChecked, onTog
   const isAlreadySaved = isSaved || ingestMutation.isSuccess;
 
   return (
-    <Card
-      className={cn(
-        'cursor-pointer transition-colors hover:bg-accent',
-        isSelected && 'border-primary bg-accent'
-      )}
-      onClick={onClick}
-    >
-      <CardContent className="p-4 space-y-2">
-        {/* Baslik - 2 satir truncate */}
-        <div className="flex items-start gap-2">
-          {onToggleSelect && (
-            <Checkbox
-              checked={isChecked}
-              onCheckedChange={() => onToggleSelect()}
-              onClick={(e) => e.stopPropagation()}
-              className="mt-1 shrink-0"
-            />
-          )}
-          <h3 className="font-medium leading-tight line-clamp-2 flex-1">
-            {paper.title}
-          </h3>
-          {/* Kutuphaneme Ekle butonu */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            onClick={handleAdd}
-            disabled={isAlreadySaved || ingestMutation.isPending}
-            title={isAlreadySaved ? 'Kutuphanede kayitli' : 'Kutuphaneme Ekle'}
-          >
-            {ingestMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isAlreadySaved ? (
-              <Check className="h-4 w-4 text-green-500" />
-            ) : (
-              <Plus className="h-4 w-4" />
+    <>
+      <Card
+        className={cn(
+          'cursor-pointer transition-colors hover:bg-accent',
+          isSelected && 'border-primary bg-accent'
+        )}
+        onClick={onClick}
+      >
+        <CardContent className="p-4 space-y-2">
+          {/* Baslik - 2 satir truncate */}
+          <div className="flex items-start gap-2">
+            {onToggleSelect && (
+              <Checkbox
+                checked={isChecked}
+                onCheckedChange={() => onToggleSelect()}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1 shrink-0"
+              />
             )}
-          </Button>
-        </div>
+            <h3 className="font-medium leading-tight line-clamp-2 flex-1">
+              {paper.title}
+            </h3>
+            {/* Kutuphaneme Ekle butonu */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={handleAdd}
+              disabled={isAlreadySaved || ingestMutation.isPending}
+              title={isAlreadySaved ? 'Kutuphanede kayitli' : 'Kutuphaneme Ekle'}
+            >
+              {ingestMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isAlreadySaved ? (
+                <Check className="h-4 w-4 text-green-500" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
 
         {/* Yazarlar - ilk 3 */}
         {displayAuthors.length > 0 && (
@@ -147,7 +154,22 @@ export default function PaperCard({ paper, isSelected, onClick, isChecked, onTog
             {paper.source === 'semantic' ? 'SS' : paper.source === 'openalex' ? 'OA' : paper.source === 'arxiv' ? 'arXiv' : paper.source === 'crossref' ? 'CR' : paper.source === 'core' ? 'CORE' : paper.source}
           </Badge>
         </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {newEntryId && (
+        <CollectionPickerDialog
+          open={showCollectionDialog}
+          onOpenChange={(open) => {
+            setShowCollectionDialog(open);
+            if (!open) {
+              setNewEntryId(null);
+            }
+          }}
+          entryIds={[newEntryId]}
+          mode="single"
+        />
+      )}
+    </>
   );
 }

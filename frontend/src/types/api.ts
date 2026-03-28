@@ -132,6 +132,20 @@ export interface CheckLibraryResponse {
   saved_ids: string[];
 }
 
+// ==================== Collection Types ====================
+
+export interface Collection {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  entry_count: number;
+}
+
+export interface CollectionListResponse {
+  items: Collection[];
+}
+
 // ==================== System Settings Types ====================
 
 export interface UserSettingsResponse {

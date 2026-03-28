@@ -3,15 +3,18 @@
  * useQuery ile GET /api/v2/library + refetchInterval: 5000
  */
 
-import { Archive, Library, Loader2, RefreshCw } from 'lucide-react';
+import { Archive, Library, Loader2, RefreshCw, FolderOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useUIStore } from '@/stores/ui-store';
 import { fetchDownloadStats, fetchLibrary, retryDownloads } from '@/services/library';
 import LibraryItem from '@/components/LibraryItem';
+import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 
 // Loading skeleton
 function LibraryItemSkeleton() {
@@ -38,18 +41,37 @@ export default function LibraryList() {
     libraryFilterYearStart,
     libraryFilterYearEnd,
     libraryFilterSearch,
+    selectedCollectionId,
   } = useUIStore();
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedEntryIds, setSelectedEntryIds] = useState<Set<number>>(new Set());
+  const [showCollectionDialog, setShowCollectionDialog] = useState(false);
+  const pageLimit = 100;
+
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['library', libraryFilterTag, libraryFilterStatus, libraryFilterMinCitations, libraryFilterYearStart, libraryFilterYearEnd, libraryFilterSearch],
+    queryKey: [
+      'library',
+      currentPage,
+      pageLimit,
+      libraryFilterTag,
+      libraryFilterStatus,
+      libraryFilterMinCitations,
+      libraryFilterYearStart,
+      libraryFilterYearEnd,
+      libraryFilterSearch,
+      selectedCollectionId,
+    ],
     queryFn: () => fetchLibrary({
-      limit: 100,
+      page: currentPage,
+      limit: pageLimit,
       tag: libraryFilterTag || undefined,
       status: libraryFilterStatus || undefined,
       min_citations: libraryFilterMinCitations ?? undefined,
       year_start: (libraryFilterYearStart && libraryFilterYearStart >= 1900) ? libraryFilterYearStart : undefined,
       year_end: (libraryFilterYearEnd && libraryFilterYearEnd >= 1900) ? libraryFilterYearEnd : undefined,
       search: libraryFilterSearch || undefined,
+      collection_id: selectedCollectionId ?? undefined,
     }),
     refetchInterval: 5000,
   });
@@ -77,6 +99,9 @@ export default function LibraryList() {
 
   const entries = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageLimit));
+  const selectionCount = selectedEntryIds.size;
+  const allSelected = entries.length > 0 && entries.every((entry) => selectedEntryIds.has(entry.id));
   const hasRetryable =
     (downloadStats?.pending ?? 0) > 0 ||
     (downloadStats?.downloading ?? 0) > 0 ||
@@ -90,9 +115,62 @@ export default function LibraryList() {
     if (libraryFilterYearStart != null && libraryFilterYearStart >= 1900) params.set('year_start', String(libraryFilterYearStart));
     if (libraryFilterYearEnd != null && libraryFilterYearEnd >= 1900) params.set('year_end', String(libraryFilterYearEnd));
     if (libraryFilterSearch) params.set('search', libraryFilterSearch);
+    if (selectedCollectionId != null) params.set('collection_id', String(selectedCollectionId));
 
     const query = params.toString();
     window.open(`/api/v2/library/download-zip${query ? `?${query}` : ''}`, '_blank');
+  };
+
+  useEffect(() => {
+    const currentEntries = data?.items;
+    if (!currentEntries || currentEntries.length === 0) {
+      setSelectedEntryIds((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    setSelectedEntryIds((prev) => {
+      const validIds = new Set(currentEntries.map((entry) => entry.id));
+      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
+      if (next.size === prev.size && Array.from(next).every((id) => prev.has(id))) {
+        return prev;
+      }
+      return next;
+    });
+  }, [data?.items]);
+
+  useEffect(() => {
+    setSelectedEntryIds((prev) => (prev.size === 0 ? prev : new Set()));
+  }, [currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    libraryFilterTag,
+    libraryFilterStatus,
+    libraryFilterMinCitations,
+    libraryFilterYearStart,
+    libraryFilterYearEnd,
+    libraryFilterSearch,
+    selectedCollectionId,
+  ]);
+
+  const handleToggleSelect = (entryId: number) => {
+    setSelectedEntryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllToggle = () => {
+    if (allSelected) {
+      setSelectedEntryIds(new Set());
+    } else {
+      setSelectedEntryIds(new Set(entries.map((entry) => entry.id)));
+    }
   };
 
   return (
@@ -135,6 +213,33 @@ export default function LibraryList() {
         </div>
       </div>
 
+      {/* Bulk Selection Toolbar */}
+      {!isLoading && entries.length > 0 && (
+        <div className="h-10 border-b flex items-center justify-between px-4 shrink-0 bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={allSelected}
+              onCheckedChange={handleSelectAllToggle}
+            />
+            <span className="text-xs text-muted-foreground">
+              {selectionCount > 0 ? `${selectionCount} secili` : 'Tumunu sec'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 text-xs"
+              onClick={() => setShowCollectionDialog(true)}
+              disabled={selectionCount === 0}
+            >
+              <FolderOpen className="h-3 w-3 mr-1" />
+              Projeye Ekle
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* List Area */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-3">
@@ -165,12 +270,50 @@ export default function LibraryList() {
                   entry={entry}
                   isSelected={selectedPaperId === `library-${entry.id}`}
                   onClick={() => setSelectedPaperId(`library-${entry.id}`)}
+                  isChecked={selectedEntryIds.has(entry.id)}
+                  onToggleSelect={() => handleToggleSelect(entry.id)}
                 />
               ))}
             </>
           )}
         </div>
       </ScrollArea>
+
+      {/* Pagination Controls */}
+      {!isLoading && totalPages > 1 && (
+        <div className="h-12 border-t flex items-center justify-between px-4 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Onceki
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {currentPage} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage >= totalPages}
+          >
+            Sonraki
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      )}
+
+      {selectionCount > 0 && (
+        <CollectionPickerDialog
+          open={showCollectionDialog}
+          onOpenChange={setShowCollectionDialog}
+          entryIds={Array.from(selectedEntryIds)}
+          mode="bulk"
+        />
+      )}
     </div>
   );
 }

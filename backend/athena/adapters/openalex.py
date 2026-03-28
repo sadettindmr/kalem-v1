@@ -59,11 +59,7 @@ class OpenAlexProvider(BaseSearchProvider):
         all_results: list[dict] = []
 
         try:
-            client_kwargs: dict = {"timeout": 60.0}
-            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            async with httpx.AsyncClient(**client_kwargs) as client:
+            async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
                 while len(all_results) < self.MAX_RESULTS:
                     response = await client.get(
                         self.BASE_URL, params=params, headers=headers

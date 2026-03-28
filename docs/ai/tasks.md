@@ -1,7 +1,152 @@
 # Current Sprint Tasks
 
-**Last Updated:** 2026-03-28
-**Active Sprints:** Sprint 12, Sprint 13
+**Last Updated:** 2026-03-29
+**Active Sprints:** Sprint 15 (✅ Completed), Sprint 14 (✅ Completed), Sprint 12-13 (✅ Completed)
+
+---
+
+## Sprint 15 - Koleksiyonlar / Proje Alanlari
+
+**Date:** 2026-03-29
+**Status:** ✅ Completed
+**Goal:** Kutuphane icin "Koleksiyon/Proje" altyapisini kurmak, makaleleri projelere atamak ve filtreleme/disa aktarma islemlerini projeye ozel hale getirmek.
+
+### 15.1 - Backend: Koleksiyon Modelleri ve API
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `Collection` model | id, name (unique), description, created_at | ✅ |
+| `collection_entries` M2M table | collection_id + entry_id association | ✅ |
+| `LibraryEntry.collections` relationship | back_populates="entries" | ✅ |
+| Alembic migration `d7f2a3b8c901` | Creates collections + collection_entries tables | ✅ |
+| `GET /api/v2/collections` | List all collections with entry_count | ✅ |
+| `POST /api/v2/collections` | Create new collection | ✅ |
+| `DELETE /api/v2/collections/{id}` | Delete collection | ✅ |
+| `POST /api/v2/collections/{id}/entries` | Sync entry list (add/remove) | ✅ |
+| `_apply_library_filters()` | Added `collection_id` subquery filter | ✅ |
+| `GET /api/v2/library` | `collection_id` query param | ✅ |
+| `GET /api/v2/library/download-zip` | `collection_id` query param | ✅ |
+| `GET /api/v2/library/export` | `collection_id` query param | ✅ |
+| `LibraryService.get_library_entries()` | `collection_id` filter | ✅ |
+| `ExportService.export_library()` | `collection_id` filter | ✅ |
+
+### 15.2 - Frontend: Koleksiyon Arayuzu
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `Collection` + `CollectionListResponse` types | api.ts | ✅ |
+| `collections.ts` service | fetchCollections, create, delete, syncEntries | ✅ |
+| `library.ts` service | `collection_id` param support | ✅ |
+| `ui-store.ts` | `selectedCollectionId` state + action | ✅ |
+| Sidebar "Projelerim" section | Collection badges, create dialog, delete | ✅ |
+| PaperDetail "Projeye Ekle" dialog | Checkbox list, sync mutation | ✅ |
+| LibraryList | `collection_id` in query key + fetch + ZIP | ✅ |
+| Settings export | `collection_id` in export URLs | ✅ |
+
+**Test Results:** Backend 17/17, Frontend 6/6, tsc clean, vite build clean
+
+---
+
+## Sprint 14 - QA & CI/CD Pipeline
+
+**Date:** 2026-03-29
+**Status:** ✅ Completed
+**Goal:** Frontend unit test infrastructure, E2E testing, and GitHub Actions CI/CD pipeline.
+
+### 14.1 - Frontend Unit Tests (Vitest)
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `vitest` + `@testing-library/react` | Installed as dev dependencies | ✅ |
+| `vite.config.ts` | Added `test` config (jsdom, globals, setupFiles) | ✅ |
+| `tsconfig.app.json` | Added `vitest/globals` to types | ✅ |
+| `tsconfig.node.json` | Added `vitest/config` to types | ✅ |
+| `src/test/setup.ts` | Created with jest-dom import | ✅ |
+| `SearchForm.test.tsx` | 6 unit tests (render, input, submit, year filters) | ✅ |
+| `package.json` | Added `test` and `test:watch` scripts | ✅ |
+
+**Test Results:** 6/6 passed
+
+### 14.2 - E2E Testing (Playwright)
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `@playwright/test` | Installed with Chromium browser | ✅ |
+| `playwright.config.ts` | Chromium project, configurable baseURL | ✅ |
+| `tests/main-flow.spec.ts` | Full search-and-add-to-library flow | ✅ |
+| `package.json` | Added `test:e2e` script | ✅ |
+
+**E2E Test Flow:**
+1. Navigate to app
+2. Search "Machine Learning"
+3. Wait for results
+4. Click "Kutuphaneme Ekle" on first result
+5. Verify success toast
+
+**Test Results:** 1/1 passed (~40s)
+
+### 14.3 - CI/CD Pipeline (GitHub Actions)
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `.github/workflows/ci.yml` | Created CI workflow | ✅ |
+| Backend job | Python 3.11, Poetry, black, isort, pytest | ✅ |
+| Frontend job | Node 20, npm ci, tsc -b, vitest run | ✅ |
+
+**Triggers:** Push/PR to `main` branch
+
+---
+
+## Sprint 13.7 - Hotfix: Enum Fix & Proxy trust_env
+
+**Date:** 2026-03-28
+**Status:** ✅ Completed
+**Goal:** Fix arXiv/Crossref ingest failure (enum case mismatch) and proxy-affecting-search (httpx trust_env).
+
+### Implemented Changes
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `c4e8a1f9b302` migration | Add uppercase ARXIV, CROSSREF, CORE to source_type enum | ✅ |
+| `semantic.py` adapter | Added `trust_env=False` to httpx client | ✅ |
+| `openalex.py` adapter | Added `trust_env=False` to httpx client | ✅ |
+| `arxiv.py` adapter | Added `trust_env=False` to httpx client | ✅ |
+| `crossref.py` adapter | Added `trust_env=False` to httpx client | ✅ |
+| `core.py` adapter | Added `trust_env=False` to httpx client | ✅ |
+
+**Root Causes Fixed:**
+- **arXiv/Crossref ingest failure:** Migration `ea63d692364c` added lowercase `arxiv`/`crossref`/`core` enum values, but SQLAlchemy writes Python enum **names** (uppercase: `ARXIV`/`CROSSREF`/`CORE`). New migration adds the uppercase variants.
+- **Proxy affecting search:** `httpx.AsyncClient()` defaults to `trust_env=True`, which reads `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` OS env vars automatically. Adding `trust_env=False` prevents Docker proxy env vars from affecting search requests.
+
+**Impact:**
+- ✅ arXiv and Crossref papers can now be added to library
+- ✅ Search works regardless of proxy settings
+- ✅ 17/17 tests pass
+
+---
+
+## Sprint 13.6 - Hotfix: Proxy Isolation
+
+**Date:** 2026-03-28
+**Status:** ✅ Completed
+**Goal:** Isolate proxy usage to PDF download service only, remove from search adapters.
+
+### Implemented Changes
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `semantic.py` adapter | Removed proxy client configuration | ✅ |
+| `openalex.py` adapter | Removed proxy usage | ✅ |
+| `arxiv.py` adapter | Removed proxy client_kwargs | ✅ |
+| `crossref.py` adapter | Removed proxy support | ✅ |
+| `core.py` adapter | Removed proxy configuration | ✅ |
+| `downloader.py` task | Kept proxy support (DB-based) | ✅ |
+
+**Impact:**
+- ✅ Search requests now use standard network (faster, no proxy overhead)
+- ✅ PDF downloads still respect `UserSettings.proxy_enabled` and `proxy_url`
+- ✅ Code is simpler and more maintainable
+- ✅ Proxy configuration only needed for institutional PDF access
 
 ---
 
@@ -74,8 +219,17 @@
 
 ## Sprint 13: Configuration Center & Search Intelligence
 
-**Status:** In Progress (Testing Phase)
+**Status:** ✅ Completed (with Sprint 13.6 Hotfix)
 **Goal:** Implement PostgreSQL full-text search, database-backed runtime settings, and dynamic provider control.
+
+### Sprint 13.6 Hotfix Summary
+
+**Completed:** 2026-03-28
+
+Proxy usage isolated to PDF download service only:
+- All search adapters (Semantic Scholar, OpenAlex, arXiv, Crossref, CORE) now use standard network
+- Only `downloader.py` respects `UserSettings.proxy_enabled` and `proxy_url`
+- Rationale: Search APIs don't require proxy; proxy is typically needed for institutional PDF downloads only
 
 ### Completed Features
 
@@ -142,11 +296,11 @@ user_settings:
 | SearchService: Post-filter by source | ✅ | Security layer |
 | Router: DB dependency in /search | ✅ | `db: AsyncSession = Depends(get_db)` |
 | Adapter: `configure_runtime(...)` | ✅ | base.py |
-| Adapters: Proxy support | ✅ | All providers |
+| Adapters: Proxy support | ⚠️ REMOVED (Sprint 13.6) | Only in downloader.py |
 | Adapters: API key override | ✅ | Runtime > .env |
 | Downloader: DB-based proxy | ✅ | tasks/downloader.py |
 | Downloader: Proxy fallback | ✅ | .env if DB read fails |
-| Tests: Runtime provider control | ✅ | test_search_runtime_provider_control.py |
+| Tests: Runtime provider control | ✅ | test_search_runtime_provider_control.py (Sprint 13.6 ile güncellendi) |
 | Tests: Proxy resolution | ✅ | test_downloader_proxy_resolution.py |
 
 **Runtime Configuration Flow:**
@@ -225,19 +379,18 @@ These tests require manual validation in running environment:
 
 ## Next Steps (Backlog)
 
-### Sprint 14 (Proposed): Performance & Scale
+### Sprint 16 (Proposed): Performance & Scale
 - [ ] Redis-backed pagination (cursor-based)
 - [ ] Search result caching
 - [ ] Database query optimization (EXPLAIN ANALYZE)
 - [ ] Celery worker autoscaling
 
-### Sprint 15 (Proposed): Advanced Features
+### Sprint 17 (Proposed): Advanced Features
 - [ ] Paper annotations/notes
-- [ ] Collections/folders
 - [ ] Sharing & collaboration
 - [ ] Citation network visualization
 
-### Sprint 16 (Proposed): Multi-tenancy
+### Sprint 18 (Proposed): Multi-tenancy
 - [ ] User authentication
 - [ ] Team/organization support
 - [ ] Access control (RBAC)
@@ -274,4 +427,4 @@ These tests require manual validation in running environment:
 
 ---
 
-*For detailed sprint documentation, see `/sprints/sprint12.md` and `/sprints/sprint13.md`*
+*For detailed sprint documentation, see `docs/sprints/sprint12.md`, `sprint13.md`, `sprint14.md`, and `sprint15.md`*

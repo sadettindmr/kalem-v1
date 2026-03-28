@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from athena.api.v2.routers import library, search, settings as settings_router, system
+from athena.api.v2.routers import collections, library, search, settings as settings_router, system
 from athena.core.config import get_settings
 from athena.core.exceptions import AthenaError, ErrorCode
 from athena.core.file_paths import resolve_data_file_path
@@ -20,7 +20,7 @@ setup_logging()
 app = FastAPI(
     title="Kalem - Kasghar",
     description="Modular Monolith Backend API",
-    version="1.0.2",
+    version="1.1.1",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -47,6 +47,7 @@ app.include_router(system.router, prefix="/api/v2")
 app.include_router(settings_router.router, prefix="/api/v2")
 app.include_router(search.router, prefix="/api/v2")
 app.include_router(library.router, prefix="/api/v2")
+app.include_router(collections.router, prefix="/api/v2")
 
 # PDF dosyalari icin base directory
 settings = get_settings()
@@ -248,6 +249,6 @@ async def root():
     """Root endpoint."""
     return {
         "message": "Kalem - Kasghar API",
-        "version": "1.0.2",
+        "version": "1.1.1",
         "docs": "/docs",
     }

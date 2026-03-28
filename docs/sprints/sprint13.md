@@ -3,7 +3,93 @@
 ## Sprint Ozeti
 **Amac:** Sprint 12'den devralinan relevance altyapisini tamamlamak ve ayar merkezilesmesine temel hazirlik yapmak.
 
-**Durum:** Devam Ediyor
+**Durum:** Tamamlandi (Sprint 13.6 Hotfix ile son hali verildi)
+
+---
+
+## Sprint 13.6 - Hotfix: Proxy Kullanimi Izolasyonu
+
+**Tarih:** 2026-03-28
+**Amac:** Proxy kullanımını sadece PDF indirme servisine izole etmek, arama isteklerini standart ağdan çıkarmak.
+
+### Uygulanan Degisiklikler
+
+#### Backend: Adapter Proxy Kaldirma
+- [x] `backend/athena/adapters/semantic.py`
+  - `httpx.AsyncClient` proxy parametresi kaldırıldı
+  - `trust_env=False` eklendi (OS/Docker HTTP_PROXY env var'larını devre dışı bırakır)
+  - Arama istekleri artık standart ağdan çıkıyor
+- [x] `backend/athena/adapters/openalex.py`
+  - Proxy kullanımı tamamen kaldırıldı
+  - `trust_env=False` eklendi
+- [x] `backend/athena/adapters/arxiv.py`
+  - Proxy client_kwargs mantığı kaldırıldı
+  - `trust_env=False` eklendi
+- [x] `backend/athena/adapters/crossref.py`
+  - Standart HTTP client kullanımına döndü
+  - `trust_env=False` eklendi
+- [x] `backend/athena/adapters/core.py`
+  - Proxy desteği kaldırıldı
+  - `trust_env=False` eklendi
+
+#### Backend: Downloader Proxy Korundu
+- [x] `backend/athena/tasks/downloader.py`
+  - PDF indirme proxy kullanımı korundu
+  - `_resolve_runtime_proxy_url()` fonksiyonu ile DB'den `UserSettings.proxy_enabled` ve `proxy_url` okunuyor
+  - `_download_file()` fonksiyonunda proxy kullanımı devam ediyor
+
+#### Backend: Arama Adaptörlerinde trust_env=False (Post-13.6 Fix)
+- **Sorun:** `httpx.AsyncClient()` varsayılan olarak `trust_env=True` ile çalışır. Bu, Docker
+  container'daki `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` ortam değişkenlerini otomatik okur.
+  Kullanıcı proxy aktifleştirdiğinde bu değişkenler set edilirse arama istekleri de proxy üzerinden
+  çıkarak başarısız oluyordu.
+- **Çözüm:** Tüm 5 arama adaptöründe `httpx.AsyncClient(trust_env=False)` eklendi. Bu sayede
+  OS/Docker proxy env değişkenleri yalnızca `downloader.py` tarafından kullanılabiliyor.
+
+**Rationale:**
+- Arama API'leri (Semantic Scholar, OpenAlex, arXiv, Crossref, CORE) standart internet erişimi ile hizmet veriyor
+- Proxy kullanımı genellikle kurumsal ağlardan PDF indirmek için gerekli (örn. ScienceDirect, IEEE Xplore)
+- Bu değişiklik sayesinde:
+  1. Arama hızı artıyor (proxy overhead'i yok)
+  2. Proxy konfigürasyonu sadece PDF indirme için gerekli
+  3. Kod daha basit ve anlaşılır hale geliyor
+  4. Docker proxy ortam değişkenleri arama isteklerini etkilemiyor
+
+---
+
+## Sprint 13.7 - Hotfix: source_type Enum Düzeltmesi ve arXiv Düşük Sonuç Düzeltmesi
+
+**Tarih:** 2026-03-28
+**Amac:** arXiv ve Crossref makalelerinin kütüphaneye eklenememesi ve arXiv'den az sonuç gelmesi sorunlarını düzeltmek.
+
+### Sorunlar ve Kök Nedenler
+
+#### 1. arXiv ve Crossref Kütüphane Ekleme Hatası (Enum Case Mismatch)
+- **Sorun:** arXiv ve Crossref kaynaklı makaleler kütüphaneye eklenirken PostgreSQL hatası veriyordu.
+- **Kök Neden:**
+  - İlk migration (`74a35bd4d28c`) `source_type` enum'unu `UPPERCASE` değerlerle oluşturdu: `SEMANTIC`, `OPENALEX`, `MANUAL`
+  - Sonraki migration (`ea63d692364c`) yeni değerleri `lowercase` ekledi: `arxiv`, `crossref`, `core`
+  - SQLAlchemy Python enum member **adlarını** (BÜYÜK HARF: `ARXIV`, `CROSSREF`, `CORE`) PostgreSQL'e yazar, `.value` özelliğini değil
+  - DB'de `ARXIV` enum değeri yoktu (yalnızca `arxiv` vardı) → INSERT hatası
+- **Çözüm:**
+  - Yeni migration `c4e8a1f9b302` eklendi: `ARXIV`, `CROSSREF`, `CORE` (ve `MANUAL` güvenlik için) büyük harf olarak eklendi
+
+#### 2. arXiv Düşük Sonuç Sayısı
+- **Sorun:** Çok kelimeli aramalarda arXiv çok az sonuç döndürüyordu.
+- **Kök Neden:** arXiv API `all:kelime1 kelime2 kelime3` şeklinde sorgularda boşlukları `AND` olarak yorumluyor. Tüm kelimelerin her alanda bulunması gerekiyor → çok kısıtlayıcı.
+- **Çözüm:** `_build_arxiv_query()` metodu eklendi: 4+ kelimeli sorgularda yalnızca ilk 3 kelime kullanılır, geri kalan filtreleme `search.py`'deki `_filter_by_relevance` tarafından yapılır.
+
+### Uygulanan Degisiklikler
+
+- [x] `backend/migrations/versions/c4e8a1f9b302_fix_source_type_enum_uppercase.py` oluşturuldu
+  - `ALTER TYPE source_type ADD VALUE IF NOT EXISTS 'ARXIV'`
+  - `ALTER TYPE source_type ADD VALUE IF NOT EXISTS 'CROSSREF'`
+  - `ALTER TYPE source_type ADD VALUE IF NOT EXISTS 'CORE'`
+  - `ALTER TYPE source_type ADD VALUE IF NOT EXISTS 'MANUAL'`
+- [x] `backend/athena/adapters/arxiv.py`
+  - `_build_arxiv_query()` metodu eklendi (4+ kelimeli sorguları kısaltır)
+  - `_should_retry_low_count()` ile düşük sonuç anomali koruması eklendi
+- [x] Tüm 5 arama adaptöründe `trust_env=False` eklendi (proxy fix)
 
 ---
 
@@ -189,11 +275,23 @@
 - [x] `cd backend && alembic heads` -> `3c4a09dd9c21 (head)`
 - [x] `cd backend && /Users/sdemir/anaconda3/bin/alembic upgrade heads` -> basarili
 - [x] `python3 -m compileall backend/athena backend/migrations/versions` -> basarili
-- [x] `cd backend && python3 -m pytest -q` -> `14 passed`
+- [x] `cd backend && python3 -m pytest -q` -> `17 passed` (Sprint 13.6 sonrasi)
 - [x] `cd frontend && npm run build` -> basarili (Tabs/Switch dahil)
 - [x] `python3 -m compileall backend/athena backend/migrations/versions backend/tests` -> basarili
 - [x] Kod tarama:
   - `search_vector`, `websearch_to_tsquery`, `ts_rank`, `@@`, `GIN` ifadeleri dogrulandi
+- [x] Sprint 13.6 proxy izolasyon dogrulamasi:
+  - `semantic.py`, `openalex.py`, `arxiv.py`, `crossref.py`, `core.py` → `httpx.AsyncClient` proxy parametresi yok
+  - `search.py` → `configure_runtime(proxy_url=None, ...)` acikca None gonderiliyor
+  - `downloader.py` → `_resolve_runtime_proxy_url()` DB'den proxy okuyor
+  - `test_search_runtime_provider_control.py` → `runtime_proxy_url is None` olarak guncellendi
+- [x] arXiv az sonuc duzeltmesi:
+  - `_build_arxiv_query()` metodu eklendi
+  - 3+ kelimeli sorgularda yalnizca ilk 3 kelime arXiv API'e gonderiliyor
+  - Geri kalan filtreleme `_filter_by_relevance` ile yapiliyor
+- [x] Ingest hatasi kök nedeni tespit edildi:
+  - `b89a4c5f7d23` migrasyonu DB'de uygulanmamis → `error_message` kolonu eksik
+  - Cozum: Docker rebuild sonrasi otomatik `alembic upgrade heads` ile duzeltilir
 
 ### 13.2 Fonksiyonel Senaryolar
 - [x] Migration uygulama testi
