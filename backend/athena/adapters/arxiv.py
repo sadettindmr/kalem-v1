@@ -31,6 +31,22 @@ class ArxivProvider(BaseSearchProvider):
         super().__init__()
         self.settings = get_settings()
 
+    def _build_arxiv_query(self, query: str) -> str:
+        """arXiv API icin uygun arama sorgusu olusturur.
+
+        arXiv 'all:' prefix'i bos karakterleri AND olarak yorumlar.
+        Cok kelimeli sorgularda bu cok kisitlayici olabilir (tum kelimeler
+        her alanda bulunmali). Bu nedenle 3+ kelimeli sorgularda yalnizca
+        ilk 3 kelime kullanilir; geri kalan filtreleme search.py'deki
+        _filter_by_relevance tarafindan yapilir.
+        """
+        words = query.split()
+        if len(words) > 3:
+            effective_query = " ".join(words[:3])
+        else:
+            effective_query = query
+        return f"all:{effective_query}"
+
     async def search(self, filters: SearchFilters) -> list[PaperResponse]:
         """arXiv API'den makale aramasi yapar.
 
@@ -45,18 +61,13 @@ class ArxivProvider(BaseSearchProvider):
         all_entries: list[dict] = []
 
         try:
-            client_kwargs: dict = {"timeout": 60.0, "follow_redirects": True}
-            proxy_url = self.runtime_proxy_url or self.settings.outbound_proxy
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-
             for attempt in range(1, self.RETRY_ATTEMPTS + 1):
                 all_entries = []
-                async with httpx.AsyncClient(**client_kwargs) as client:
+                async with httpx.AsyncClient(timeout=60.0, follow_redirects=True, trust_env=False) as client:
                     start = 0
                     while start < self.MAX_RESULTS:
                         params = {
-                            "search_query": f"all:{filters.query}",
+                            "search_query": self._build_arxiv_query(filters.query),
                             "start": start,
                             "max_results": self.RESULTS_PER_PAGE,
                             "sortBy": "relevance",

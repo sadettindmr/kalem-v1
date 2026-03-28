@@ -110,7 +110,8 @@ def test_search_service_respects_enabled_providers_and_runtime_injection():
 
     assert core.runtime_api_key == "core-key"
     assert core.runtime_contact_email == "runtime@example.com"
-    assert core.runtime_proxy_url == "http://proxy.local:8080"
+    # Sprint 13.6: Proxy arama adaptörlerine iletilmez; sadece downloader kullanır.
+    assert core.runtime_proxy_url is None
 
     assert response.meta.raw_semantic == 0
     assert response.meta.raw_openalex == 0
