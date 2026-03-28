@@ -88,6 +88,7 @@ export interface LibraryEntry {
   source: PaperSource;
   download_status: DownloadStatus;
   file_path: string | null;
+  error_message: string | null;
   is_favorite: boolean;
   tags: Tag[];
   paper: PaperDetail;

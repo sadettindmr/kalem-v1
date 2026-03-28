@@ -76,7 +76,7 @@ class SearchService:
 
         for provider in active_providers:
             provider.configure_runtime(
-                proxy_url=runtime.proxy_url,
+                proxy_url=None,  # Proxy sadece indirme için kullanılır
                 api_key=self._provider_api_key(provider.provider_id, runtime),
                 contact_email=runtime.contact_email,
             )

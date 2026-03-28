@@ -42,6 +42,7 @@ export default function PaperDetail() {
   let libraryTags: { id: number; name: string }[] = [];
   let downloadStatus: string | null = null;
   let filePath: string | null = null;
+  let errorMessage: string | null = null;
 
   if (selectedPaperId?.startsWith('library-')) {
     const entryId = Number(selectedPaperId.replace('library-', ''));
@@ -61,6 +62,7 @@ export default function PaperDetail() {
       libraryTags = entry.tags;
       downloadStatus = entry.download_status;
       filePath = entry.file_path;
+      errorMessage = entry.error_message;
     }
   } else {
     selectedPaper = searchResults.find(

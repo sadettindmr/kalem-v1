@@ -123,6 +123,7 @@ def download_paper_task(self, entry_id: int) -> dict:
 
         if not pdf_url:
             entry.download_status = DownloadStatus.FAILED
+            entry.error_message = "PDF URL bulunamadı. Makale muhtemelen açık erişim değil."
             db.commit()
             logger.warning(f"[Download] No PDF URL found: entry_id={entry_id}, paper_id={paper.id}")
             return {"status": "failed", "message": "No PDF URL"}
@@ -152,6 +153,7 @@ def download_paper_task(self, entry_id: int) -> dict:
 
         entry.download_status = DownloadStatus.COMPLETED
         entry.file_path = stored_path
+        entry.error_message = None  # Başarılı olduğunda hata mesajını temizle
         db.commit()
 
         logger.info(f"[Download] Completed: entry_id={entry_id}, size={file_size} bytes, path={file_path}")
@@ -169,6 +171,7 @@ def download_paper_task(self, entry_id: int) -> dict:
             # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
             if self.request.retries >= self.max_retries:
                 entry.download_status = DownloadStatus.FAILED
+                entry.error_message = f"HTTP hatası ({error_type}): {str(e)[:200]}"
                 db.commit()
                 logger.error(f"[Download] Max retries reached, marked FAILED: entry_id={entry_id}")
                 return {
@@ -191,6 +194,7 @@ def download_paper_task(self, entry_id: int) -> dict:
     except MaxRetriesExceededError:
         # Maksimum retry aşıldı
         entry.download_status = DownloadStatus.FAILED
+        entry.error_message = "Maksimum deneme sayısı aşıldı. PDF erişilemiyor."
         db.commit()
         logger.error(f"[Download] Max retries exceeded: entry_id={entry_id}")
         return {"status": "failed", "message": "Max retries exceeded"}
@@ -201,6 +205,7 @@ def download_paper_task(self, entry_id: int) -> dict:
         logger.error(f"[Download] Unexpected error: entry_id={entry_id}, type={error_type}, detail={e}")
         try:
             entry.download_status = DownloadStatus.FAILED
+            entry.error_message = f"Beklenmeyen hata ({error_type}): {str(e)[:200]}"
             db.commit()
         except Exception:
             pass

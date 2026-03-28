@@ -35,6 +35,7 @@ class LibraryEntrySchema(BaseModel):
     source: PaperSource
     download_status: str
     file_path: Optional[str] = None
+    error_message: Optional[str] = None
     is_favorite: bool = False
     tags: list[TagSchema] = Field(default_factory=list)
     paper: PaperDetailSchema
