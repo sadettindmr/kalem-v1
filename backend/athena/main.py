@@ -28,7 +28,7 @@ app = FastAPI(
         "- **Dışa Aktarma**: Excel (XLSX) ve CSV formatlarında bibliyografik veri aktarımı\n"
         "- **Ayarlar**: API anahtarları, sağlayıcı kontrolü ve proxy yapılandırması\n"
     ),
-    version="1.0.0",
+    version="1.1.2",
     contact={
         "name": "Kalem Core Team",
         "url": "https://github.com/sadettindmr/kalem-v1",
@@ -287,6 +287,6 @@ async def root():
     """Root endpoint."""
     return {
         "message": "Kalem API - Kasghar Release",
-        "version": "1.0.0",
+        "version": "1.1.2",
         "docs": "/docs",
     }
