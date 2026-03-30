@@ -9,6 +9,10 @@
 - EZProxy prefix URL ve oturum çerezi (cookie) yapılandırması.
 - PDF indirici 401/402/403 hatalarında otomatik EZProxy fallback.
 
+### Fixed
+
+- CI workflow `snok/install-poetry` action ismi düzeltildi.
+
 ### Technical Notes
 
 - Backend:
@@ -19,6 +23,8 @@
 - Frontend:
   - Network tab'a EZProxy konfigürasyon arayüzü eklendi.
   - TypeScript interface'leri güncellendi.
+- CI:
+  - `snoks/install-poetry` → `snok/install-poetry` typo düzeltildi.
 
 ---
 
