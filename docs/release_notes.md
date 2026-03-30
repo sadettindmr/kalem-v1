@@ -1,5 +1,33 @@
 # Release Notes
 
+## v1.3.0 (2026-03-30)
+
+### Added
+
+- **Kütüphaneden Silme:** Makaleler kütüphaneden kalıcı olarak silinebilir hale geldi. PDF dosyaları da diskten temizlenir.
+- **Projeden Çıkarma:** Koleksiyon görünümünde makaleler projeden çıkarılabilir (kütüphaneden silinmez).
+- **Etiket Düzenleme:** Makale detay panelinde etiketler inline olarak düzenlenebilir.
+- `DELETE /api/v2/library/{entry_id}` - Kütüphane kaydı + PDF silme endpoint'i.
+- `DELETE /api/v2/collections/{cid}/entries/{eid}` - Koleksiyondan çıkarma endpoint'i.
+- `PUT /api/v2/library/{entry_id}/tags` - Etiket güncelleme (overwrite) endpoint'i.
+- LibraryItem kartlarına "Sil" (kırmızı) ve "Çıkar" (turuncu, koleksiyon seçiliyken) butonları eklendi.
+- Silme işlemi öncesi onay dialog'u eklendi.
+- PaperDetail'de kalem ikonu ile inline etiket düzenleme arayüzü eklendi.
+
+### Technical Notes
+
+- Backend:
+  - `LibraryService.delete_library_entry()` - PDF temizliği + DB silme.
+  - `LibraryService.update_tags()` - Tag overwrite (find-or-create).
+  - `collections.py` router'a `remove_entry_from_collection` endpoint'i eklendi.
+- Frontend:
+  - `LibraryItem.tsx` - Dialog onay, Sil/Çıkar butonları (her zaman görünür, outline stil).
+  - `PaperDetail.tsx` - Inline tag editor (Pencil ikon, Input, Kaydet/Vazgeç).
+  - `LibraryList.tsx` - `deleteMutation`, `removeFromCollectionMutation` eklendi.
+  - `library.ts` / `collections.ts` - Yeni API fonksiyonları.
+
+---
+
 ## v1.2.0 (2026-03-30)
 
 ### Added

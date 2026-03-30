@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -711,3 +711,68 @@ async def export_library(
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+@router.delete(
+    "/{entry_id}",
+    summary="Kütüphaneden Makale Sil",
+    response_description="Silme onay mesajı",
+)
+async def delete_library_entry(
+    entry_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Kütüphaneden bir makaleyi siler.
+
+    Fiziksel PDF dosyası varsa diskten de kaldırılır.
+    Koleksiyon ilişkileri CASCADE ile otomatik silinir.
+    """
+    settings = get_settings()
+    data_dir = Path(settings.data_dir)
+    service = LibraryService(db)
+    deleted = await service.delete_library_entry(entry_id, data_dir)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Library entry bulunamadi")
+
+    logger.info(f"Library entry deleted: id={entry_id}")
+    return {"status": "deleted", "id": entry_id}
+
+
+class UpdateTagsRequest(BaseModel):
+    """Etiket güncelleme isteği."""
+
+    tags: list[str] = Field(
+        ...,
+        description="Yeni etiket listesi (mevcut etiketlerin yerine geçer)",
+        examples=[["makine öğrenmesi", "derin öğrenme"]],
+    )
+
+
+@router.put(
+    "/{entry_id}/tags",
+    summary="Etiketleri Güncelle",
+    response_description="Güncellenmiş etiket listesi",
+)
+async def update_library_tags(
+    entry_id: int,
+    data: UpdateTagsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Kütüphane kaydının etiketlerini günceller (overwrite).
+
+    Mevcut etiketler kaldırılır ve gönderilen liste ile değiştirilir.
+    Yeni etiketler otomatik oluşturulur.
+    """
+    service = LibraryService(db)
+    entry = await service.update_tags(entry_id, data.tags)
+
+    if not entry:
+        raise HTTPException(status_code=404, detail="Library entry bulunamadi")
+
+    logger.info(f"Tags updated: entry_id={entry_id}, tags={[t.name for t in entry.tags]}")
+    return {
+        "status": "updated",
+        "entry_id": entry_id,
+        "tags": [{"id": t.id, "name": t.name} for t in entry.tags],
+    }

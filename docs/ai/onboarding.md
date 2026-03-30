@@ -85,8 +85,9 @@ This guide will help you get up to speed with the **Kalem** (Kasghar) project - 
   - Focus on: Non-negotiable rules, commit message format
 
 - [ ] **Review** active sprint docs
-  - [ ] `docs/sprints/sprint12.md` - Advanced export features
-  - [ ] `docs/sprints/sprint13.md` - Configuration center & FTS
+  - [ ] `docs/sprints/sprint18.md` - Library management (delete, remove, tags)
+  - [ ] `docs/sprints/sprint17.md` - EZProxy institutional access
+  - [ ] `docs/sprints/sprint15.md` - Collections / projects
 
 **Goal:** Understand why we made specific design choices and what we're building.
 

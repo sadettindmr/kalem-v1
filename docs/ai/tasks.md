@@ -1,7 +1,46 @@
 # Current Sprint Tasks
 
 **Last Updated:** 2026-03-30
-**Active Sprints:** Sprint 17 (✅ Completed), Sprint 16 (✅ Completed), Sprint 15 (✅ Completed)
+**Active Sprints:** Sprint 18 (✅ Completed), Sprint 17 (✅ Completed), Sprint 16 (✅ Completed)
+
+---
+
+## Sprint 18 - Kütüphane Yönetimi: Silme, Projeden Çıkarma ve Etiket Düzenleme
+
+**Date:** 2026-03-30
+**Status:** ✅ Completed
+**Version:** v1.3.0
+**Goal:** Kullanıcının kütüphanesindeki makaleleri silebilmesini, projelerinden çıkarabilmesini ve etiketleri düzenleyebilmesini sağlamak.
+
+### 18.1 - Kütüphaneden Silme
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `LibraryService.delete_library_entry()` | Entry + PDF silme | ✅ |
+| `DELETE /api/v2/library/{entry_id}` | Silme endpoint'i | ✅ |
+| `library.ts` deleteLibraryEntry | API fonksiyonu | ✅ |
+| `LibraryItem.tsx` Sil butonu | Kırmızı outline + onay dialog | ✅ |
+| `LibraryList.tsx` deleteMutation | Mutation + toast + invalidate | ✅ |
+
+### 18.2 - Projeden Çıkarma
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `DELETE /api/v2/collections/{cid}/entries/{eid}` | Yeni endpoint | ✅ |
+| `collections.ts` removeEntryFromCollection | API fonksiyonu | ✅ |
+| `LibraryItem.tsx` Çıkar butonu | Turuncu outline (koleksiyon seçiliyken) | ✅ |
+| `LibraryList.tsx` removeFromCollectionMutation | Mutation + toast | ✅ |
+
+### 18.3 - Etiket Düzenleme
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `LibraryService.update_tags()` | Overwrite servis metodu | ✅ |
+| `PUT /api/v2/library/{entry_id}/tags` | Güncelleme endpoint'i | ✅ |
+| `library.ts` updateLibraryTags | API fonksiyonu | ✅ |
+| `PaperDetail.tsx` tag editor | Pencil ikon + inline Input + Kaydet/Vazgeç | ✅ |
+
+**Test Results:** tsc clean, vite build clean, Python syntax 3/3 OK
 
 ---
 
@@ -475,20 +514,20 @@ These tests require manual validation in running environment:
 
 ## Next Steps (Backlog)
 
-### Sprint 18 (Proposed): Performance & Scale
+### Sprint 19 (Proposed): Performance & Scale
 
 - [ ] Redis-backed pagination (cursor-based)
 - [ ] Search result caching
 - [ ] Database query optimization (EXPLAIN ANALYZE)
 - [ ] Celery worker autoscaling
 
-### Sprint 19 (Proposed): Advanced Features
+### Sprint 20 (Proposed): Advanced Features
 
 - [ ] Paper annotations/notes
 - [ ] Sharing & collaboration
 - [ ] Citation network visualization
 
-### Sprint 20 (Proposed): Multi-tenancy
+### Sprint 21 (Proposed): Multi-tenancy
 
 - [ ] User authentication
 - [ ] Team/organization support
@@ -529,4 +568,4 @@ These tests require manual validation in running environment:
 
 ---
 
-_For detailed sprint documentation, see `docs/sprints/sprint12.md` through `sprint16.md`_
+_For detailed sprint documentation, see `docs/sprints/sprint12.md` through `sprint18.md`_

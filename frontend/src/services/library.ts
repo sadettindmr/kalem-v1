@@ -107,3 +107,20 @@ export interface EnrichMetadataResponse {
 export async function enrichMetadata(limit = 20): Promise<EnrichMetadataResponse> {
   return api.post<never, EnrichMetadataResponse>(`/library/enrich-metadata?limit=${limit}`);
 }
+
+/**
+ * Kütüphaneden makale siler (PDF dosyası dahil)
+ */
+export async function deleteLibraryEntry(id: number): Promise<{ status: string; id: number }> {
+  return api.delete<never, { status: string; id: number }>(`/library/${id}`);
+}
+
+/**
+ * Kütüphane kaydının etiketlerini günceller (overwrite)
+ */
+export async function updateLibraryTags(
+  entryId: number,
+  tags: string[],
+): Promise<{ status: string; entry_id: number; tags: Array<{ id: number; name: string }> }> {
+  return api.put(`/library/${entryId}/tags`, { tags });
+}
