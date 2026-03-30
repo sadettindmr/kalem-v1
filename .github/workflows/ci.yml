@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Poetry
-        uses: snoks/install-poetry@v1
+        uses: snok/install-poetry@v1
         with:
           version: latest
           virtualenvs-create: true
