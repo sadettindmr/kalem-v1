@@ -18,6 +18,8 @@ class UpdateSettingsData:
     enabled_providers: list[str] | None = None
     proxy_url: str | None = None
     proxy_enabled: bool | None = None
+    ezproxy_prefix: str | None = None
+    ezproxy_cookie: str | None = None
 
 
 class UserSettingsService:
@@ -41,6 +43,8 @@ class UserSettingsService:
             enabled_providers=list(DEFAULT_ENABLED_PROVIDERS),
             proxy_url=env.outbound_proxy or None,
             proxy_enabled=bool(env.outbound_proxy),
+            ezproxy_prefix=None,
+            ezproxy_cookie=None,
         )
         self.db.add(settings_row)
         await self.db.flush()
@@ -69,6 +73,10 @@ class UserSettingsService:
             settings_row.proxy_url = data.proxy_url.strip() or None
         if data.proxy_enabled is not None:
             settings_row.proxy_enabled = data.proxy_enabled
+        if data.ezproxy_prefix is not None:
+            settings_row.ezproxy_prefix = data.ezproxy_prefix.strip() or None
+        if data.ezproxy_cookie is not None:
+            settings_row.ezproxy_cookie = data.ezproxy_cookie.strip() or None
 
         await self.db.flush()
         return settings_row
@@ -96,4 +104,3 @@ class UserSettingsService:
             if key not in normalized:
                 normalized.append(key)
         return normalized or list(DEFAULT_ENABLED_PROVIDERS)
-

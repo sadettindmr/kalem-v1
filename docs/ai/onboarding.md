@@ -12,13 +12,22 @@ SPLIT_STRATEGY:
 
 # AI Assistant Onboarding Guide
 
-**Last Updated:** 2026-03-28
+**Last Updated:** 2026-03-30
 
 ---
 
 ## 🎓 Welcome to Kalem!
 
 This guide will help you get up to speed with the **Kalem** (Kasghar) project - an academic paper research and library management system.
+
+---
+
+## 🚀 Current Release Snapshot
+
+- **Version:** `v1.2.0` (Kasghar Release)
+- **Release Date:** 2026-03-30
+- **Highlights:** EZProxy enstitü erişimi desteği, ücretli makalelerin üniversite proxy'si üzerinden indirilmesi.
+- **Reference:** See `docs/release_notes.md` for full changelog and deployment notes.
 
 ---
 
@@ -274,4 +283,4 @@ After completing this onboarding:
 
 ---
 
-_Last Updated: 2026-03-28_
+_Last Updated: 2026-03-30_

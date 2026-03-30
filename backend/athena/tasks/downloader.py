@@ -97,6 +97,7 @@ def download_paper_task(self, entry_id: int) -> dict:
     settings = get_settings()
     db: Session = get_sync_db_session()
     runtime_proxy_url = _resolve_runtime_proxy_url(db, settings.outbound_proxy)
+    ezproxy_settings = _load_ezproxy_settings(db)
 
     retry_info = f"(attempt {self.request.retries + 1}/{self.max_retries + 1})" if self.request.retries > 0 else ""
     logger.info(f"[Download] Starting entry_id={entry_id} {retry_info}")
@@ -120,15 +121,16 @@ def download_paper_task(self, entry_id: int) -> dict:
 
         # 3. PDF URL kontrol
         pdf_url = _find_pdf_url(paper)
-
-        if not pdf_url:
+        if not pdf_url and not paper.doi:
             entry.download_status = DownloadStatus.FAILED
             entry.error_message = "PDF URL bulunamadı. Makale muhtemelen açık erişim değil."
             db.commit()
-            logger.warning(f"[Download] No PDF URL found: entry_id={entry_id}, paper_id={paper.id}")
+            logger.warning(f"[Download] No PDF URL or DOI found: entry_id={entry_id}, paper_id={paper.id}")
             return {"status": "failed", "message": "No PDF URL"}
-
-        logger.info(f"[Download] PDF URL found: {pdf_url[:120]}")
+        if pdf_url:
+            logger.info(f"[Download] PDF URL found: {pdf_url[:120]}")
+        else:
+            logger.info(f"[Download] No direct PDF URL. Will require DOI-based EZProxy fallback.")
 
         # 4. Dosya yolu oluştur
         file_path = generate_file_path(paper, settings)
@@ -136,7 +138,7 @@ def download_paper_task(self, entry_id: int) -> dict:
 
         # 5. PDF indir
         logger.info(f"[Download] Downloading: entry_id={entry_id} -> {file_path}")
-        _download_file(pdf_url, file_path, runtime_proxy_url)
+        _download_file(pdf_url, file_path, runtime_proxy_url, entry_id)
 
         # 6. Dosya boyutunu kontrol et
         file_size = file_path.stat().st_size
@@ -167,6 +169,32 @@ def download_paper_task(self, entry_id: int) -> dict:
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         error_type = type(e).__name__
         logger.warning(f"[Download] HTTP error: entry_id={entry_id}, type={error_type}, detail={e}")
+        if _should_try_ezproxy(e, pdf_url, paper, ezproxy_settings):
+            try:
+                _download_via_ezproxy(
+                    ezproxy_settings,
+                    file_path,
+                    paper,
+                    pdf_url,
+                    runtime_proxy_url,
+                    entry_id,
+                )
+                entry.download_status = DownloadStatus.COMPLETED
+                entry.error_message = None
+                try:
+                    stored_path = str(file_path.relative_to(settings.data_dir))
+                except ValueError:
+                    stored_path = str(file_path)
+                entry.file_path = stored_path
+                db.commit()
+                logger.info(f"[Download] Completed via EZProxy: entry_id={entry_id}")
+                return {
+                    "status": "completed",
+                    "entry_id": entry_id,
+                    "file_path": stored_path,
+                }
+            except Exception as ez_err:
+                logger.warning(f"[Download] EZProxy fallback failed: entry_id={entry_id}, reason={ez_err}")
         try:
             # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
             if self.request.retries >= self.max_retries:
@@ -359,7 +387,30 @@ def _resolve_runtime_proxy_url(db: Session, fallback_proxy: str | None) -> str |
     return None
 
 
-def _download_file(url: str, file_path: Path, proxy_url: str | None = None) -> None:
+def _load_ezproxy_settings(db: Session) -> dict | None:
+    """DB'den EZProxy ayarlarını çeker."""
+    try:
+        row = db.execute(select(UserSettings).order_by(UserSettings.id.asc())).scalar_one_or_none()
+    except Exception as exc:
+        logger.warning(f"[Download] Could not read user_settings for ezproxy: {exc}")
+        return None
+
+    if not row or not row.ezproxy_prefix or not row.ezproxy_cookie:
+        return None
+
+    return {
+        "prefix": row.ezproxy_prefix.strip(),
+        "cookie": row.ezproxy_cookie.strip(),
+    }
+
+
+def _download_file(
+    url: str | None,
+    file_path: Path,
+    proxy_url: str | None = None,
+    entry_id: int | None = None,
+    headers_override: dict | None = None,
+) -> None:
     """URL'den dosyayı indirir.
 
     Args:
@@ -373,10 +424,15 @@ def _download_file(url: str, file_path: Path, proxy_url: str | None = None) -> N
         "User-Agent": user_agent,
         "Accept": "application/pdf,*/*",
     }
+    if headers_override:
+        headers.update(headers_override)
 
     client_kwargs: dict = {"timeout": DOWNLOAD_TIMEOUT, "follow_redirects": True}
     if proxy_url:
         client_kwargs["proxy"] = proxy_url
+
+    if not url:
+        raise ValueError("PDF URL is required")
 
     with httpx.Client(**client_kwargs) as client:
         with client.stream("GET", url, headers=headers) as response:
@@ -385,3 +441,39 @@ def _download_file(url: str, file_path: Path, proxy_url: str | None = None) -> N
             with open(file_path, "wb") as f:
                 for chunk in response.iter_bytes(chunk_size=8192):
                     f.write(chunk)
+
+
+def _should_try_ezproxy(error: Exception, pdf_url: str | None, paper, ezproxy_settings: dict | None) -> bool:
+    """EZProxy fallback şartlarını kontrol eder."""
+    if not ezproxy_settings:
+        return False
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code not in (401, 402, 403):
+        return False
+    if not pdf_url and not paper.doi:
+        return False
+    return True
+
+
+def _build_ezproxy_target(prefix: str, pdf_url: str | None, paper) -> str:
+    if pdf_url:
+        return f"{prefix}{pdf_url}"
+    if paper.doi:
+        doi_url = paper.doi
+        if not doi_url.startswith("http"):
+            doi_url = f"https://doi.org/{doi_url}"
+        return f"{prefix}{doi_url}"
+    raise ValueError("EZProxy target could not be built")
+
+
+def _download_via_ezproxy(
+    ezproxy_settings: dict,
+    file_path: Path,
+    paper,
+    original_pdf_url: str | None,
+    proxy_url: str | None,
+    entry_id: int | None,
+) -> None:
+    target = _build_ezproxy_target(ezproxy_settings["prefix"], original_pdf_url, paper)
+    logger.info(f"[Download] EZProxy fallback attempted: entry_id={entry_id}, target={target[:120]}")
+    headers = {"Cookie": ezproxy_settings["cookie"]}
+    _download_file(target, file_path, proxy_url, entry_id, headers_override=headers)

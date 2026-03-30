@@ -1,16 +1,41 @@
 # Release Notes
 
+## v1.2.0 (2026-03-30)
+
+### Added
+
+- **EZProxy Enstitü Erişimi:** Ücretli makaleleri üniversite kütüphane proxy'si üzerinden indirme desteği.
+- Settings sayfasına "Enstitü Erişimi (EZProxy)" bölümü eklendi.
+- EZProxy prefix URL ve oturum çerezi (cookie) yapılandırması.
+- PDF indirici 401/402/403 hatalarında otomatik EZProxy fallback.
+
+### Technical Notes
+
+- Backend:
+  - `UserSettings` modeline `ezproxy_prefix` ve `ezproxy_cookie` alanları eklendi.
+  - Migration `7245dcd6adc4_add_ezproxy_settings.py` oluşturuldu.
+  - `downloader.py`'ye EZProxy fallback helper fonksiyonları eklendi.
+  - `_download_file()` metoduna `headers_override` parametresi eklendi.
+- Frontend:
+  - Network tab'a EZProxy konfigürasyon arayüzü eklendi.
+  - TypeScript interface'leri güncellendi.
+
+---
+
 ## v1.1.3 (2026-03-30)
 
 ### Added
+
 - Swagger UI / ReDoc dokümantasyonu zenginleştirildi (metadata, tag grupları, örnekler).
 - API şemalarında kapsamlı örnek veri ve açıklamalar eklendi.
 
 ### Fixed
+
 - Docker Compose’da `DEBUG` ortam değişkeni artık her ortamda geçerli boolean olacak şekilde sabitlendi.
 - Kütüphane sayfası için sayfalama (pagination) eklendi.
 
 ### Technical Notes
+
 - Backend:
   - OpenAPI metadata ve tag açıklamaları detaylandırıldı.
   - Router endpoint summary/response_description/docstring eklendi.
@@ -21,15 +46,18 @@
 ## v1.0.2 (2026-02-15)
 
 ### Fixed
+
 - Search result totals for multi-term queries are now more stable across repeated runs.
 - Added a retry path for arXiv low-result anomalies (for broad/multi-term queries) to reduce sudden drops like `107 -> 61`.
 
 ### Investigation Summary
+
 - Query checked: `federated learning, sepsis` (`year_start=2020`, `year_end=2026`).
 - Intermittent result drop was observed from arXiv raw count fluctuations (`833` vs `83`) while other providers stayed stable.
 - Dedup/relevance math remained consistent; the volatility source was upstream provider response variability.
 
 ### Technical Notes
+
 - Backend:
   - `ArxivProvider.search` now retries once when a multi-term query returns unexpectedly low result count.
   - Retry uses short backoff and preserves existing parsing/filter logic.
@@ -37,10 +65,12 @@
 ## v1.0.1-p1 (2026-02-15)
 
 ### Added
+
 - Settings page now includes a new `Hakkinda` subsection under the `Sistem` tab.
 - Header logo area now shows the application version directly below the app name.
 
 ### Technical Notes
+
 - Frontend:
   - Added centralized app constants: `APP_NAME`, `APP_VERSION`.
   - Version label rendered in dashboard header.
@@ -49,6 +79,7 @@
 ## v1.0.1 (2026-02-15)
 
 ### Fixed
+
 - Search result metrics are now more transparent in the UI:
   - Added `relevance_removed` to search metadata payload.
   - Added `Alaka disi elenen` row in the search sidebar to show relevance-based eliminations.
@@ -56,9 +87,11 @@
   - `Ham kaynak sonuclari - Alaka disi elenen - Mukerrer elenen = Toplam`
 
 ### Changed
+
 - Project release version updated to `v1.0.1` in application-facing version references.
 
 ### Technical Notes
+
 - Backend:
   - `/api/v2/search` response `meta` now includes `relevance_removed`.
 - Frontend:
