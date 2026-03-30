@@ -19,6 +19,16 @@ class UserSettingsResponse(BaseModel):
     enabled_providers: list[str] = Field(..., description="Aktif arama sağlayıcıları", examples=[["semantic", "openalex", "arxiv", "crossref", "core"]])
     proxy_url: str | None = Field(default=None, description="Proxy sunucu URL'si", examples=["http://proxy.university.edu:8080"])
     proxy_enabled: bool = Field(..., description="Proxy aktif mi", examples=[False])
+    ezproxy_prefix: str | None = Field(
+        default=None,
+        description="EZProxy giriş URL öneki",
+        examples=["https://proxy.uskudar.edu.tr/login?url="],
+    )
+    ezproxy_cookie: str | None = Field(
+        default=None,
+        description="EZProxy oturum çerezi (maskelenmiş)",
+        examples=["ezproxy=***"],
+    )
 
 
 class UserSettingsUpdateRequest(BaseModel):
@@ -31,6 +41,16 @@ class UserSettingsUpdateRequest(BaseModel):
     enabled_providers: list[str] | None = Field(default=None, description="Aktif sağlayıcı listesi", examples=[["semantic", "openalex", "arxiv"]])
     proxy_url: str | None = Field(default=None, description="Proxy sunucu URL'si", examples=["http://proxy.university.edu:8080"])
     proxy_enabled: bool | None = Field(default=None, description="Proxy aktif/pasif", examples=[True])
+    ezproxy_prefix: str | None = Field(
+        default=None,
+        description="EZProxy giriş URL öneki",
+        examples=["https://proxy.uskudar.edu.tr/login?url="],
+    )
+    ezproxy_cookie: SecretStr | None = Field(
+        default=None,
+        description="EZProxy oturum çerezi",
+        examples=["ezproxy=123456789"],
+    )
 
 
 def _mask_secret(value: str | None) -> str | None:
@@ -54,6 +74,8 @@ def _to_response(row) -> UserSettingsResponse:
         enabled_providers=row.enabled_providers or [],
         proxy_url=row.proxy_url,
         proxy_enabled=row.proxy_enabled,
+        ezproxy_prefix=row.ezproxy_prefix,
+        ezproxy_cookie=_mask_secret(row.ezproxy_cookie),
     )
 
 
@@ -104,7 +126,10 @@ async def update_user_settings(
         enabled_providers=payload.enabled_providers,
         proxy_url=payload.proxy_url,
         proxy_enabled=payload.proxy_enabled,
+        ezproxy_prefix=payload.ezproxy_prefix,
+        ezproxy_cookie=payload.ezproxy_cookie.get_secret_value()
+        if payload.ezproxy_cookie is not None
+        else None,
     )
     row = await service.update_settings(data)
     return _to_response(row)
-

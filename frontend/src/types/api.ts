@@ -157,6 +157,8 @@ export interface UserSettingsResponse {
   enabled_providers: string[];
   proxy_url: string | null;
   proxy_enabled: boolean;
+  ezproxy_prefix: string | null;
+  ezproxy_cookie: string | null;
 }
 
 export interface UserSettingsUpdateRequest {
@@ -167,4 +169,6 @@ export interface UserSettingsUpdateRequest {
   enabled_providers?: string[];
   proxy_url?: string | null;
   proxy_enabled?: boolean;
+  ezproxy_prefix?: string | null;
+  ezproxy_cookie?: string | null;
 }

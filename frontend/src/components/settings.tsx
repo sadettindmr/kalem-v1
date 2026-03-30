@@ -89,6 +89,8 @@ interface SettingsFormState {
   enabled_providers: string[];
   proxy_url: string;
   proxy_enabled: boolean;
+  ezproxy_prefix: string;
+  ezproxy_cookie: string;
 }
 
 function toFormState(settings: UserSettingsResponse): SettingsFormState {
@@ -100,6 +102,8 @@ function toFormState(settings: UserSettingsResponse): SettingsFormState {
     enabled_providers: settings.enabled_providers ?? [],
     proxy_url: settings.proxy_url ?? '',
     proxy_enabled: settings.proxy_enabled,
+    ezproxy_prefix: settings.ezproxy_prefix ?? '',
+    ezproxy_cookie: settings.ezproxy_cookie ?? '',
   };
 }
 
@@ -143,6 +147,8 @@ export default function Settings() {
         enabled_providers: form.enabled_providers,
         proxy_enabled: form.proxy_enabled,
         proxy_url: form.proxy_url.trim() || null,
+        ezproxy_prefix: form.ezproxy_prefix.trim() || null,
+        ezproxy_cookie: form.ezproxy_cookie.trim() || null,
       });
     },
     onSuccess: (result) => {
@@ -375,6 +381,48 @@ export default function Settings() {
                       disabled={!form.proxy_enabled}
                     />
                   </div>
+                </div>
+
+                <div className="border rounded-md p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="uppercase tracking-wide">
+                      EZProxy
+                    </Badge>
+                    <div>
+                      <p className="text-sm font-medium">Enstitu Erisimi (EZProxy)</p>
+                      <p className="text-xs text-muted-foreground">
+                        Paywall arkasindaki makaleler icin kurum kutuphane oturumunu kullanir.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="ezproxy-prefix">EZProxy Prefix URL</Label>
+                    <Input
+                      id="ezproxy-prefix"
+                      placeholder="https://proxy.univ.edu/login?url="
+                      value={form.ezproxy_prefix}
+                      onChange={(e) => updateForm({ ezproxy_prefix: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="ezproxy-cookie">Aktif Oturum Cerezi (Cookie)</Label>
+                    <Input
+                      id="ezproxy-cookie"
+                      type="password"
+                      placeholder="ezproxy=..."
+                      value={form.ezproxy_cookie}
+                      onChange={(e) => updateForm({ ezproxy_cookie: e.target.value })}
+                    />
+                  </div>
+
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Tarayicinizdan universite kutuphane sistemine giris yapin. Gelistirici araclarini (F12) acip
+                    Application/Storage &gt; Cookies bolumundan <code>ezproxy</code> degerini kopyalayarak buraya
+                    yapistirin. Kaydet butonuna bastiktan sonra indirilemeyen makaleler otomatik olarak EZProxy
+                    uzerinden tekrar denenir.
+                  </p>
                 </div>
 
                 <div className="flex justify-end">
