@@ -2,18 +2,20 @@
  * PaperDetail - Makale detay paneli
  * Secilen makalenin detaylarini gosterir (search ve library)
  * PDF Viewer (iframe embed) destegi
+ * Etiket duzenleme destegi
  */
 
 import { useEffect, useState } from 'react';
-import { BookOpen, ExternalLink, Calendar, Users, Quote, Tag, Save, Loader2, Check, FileText, FolderOpen } from 'lucide-react';
+import { BookOpen, ExternalLink, Calendar, Users, Quote, Tag, Save, Loader2, Check, FileText, FolderOpen, Pencil } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useUIStore } from '@/stores/ui-store';
-import { fetchLibrary, ingestPaper } from '@/services/library';
+import { fetchLibrary, ingestPaper, updateLibraryTags } from '@/services/library';
 import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 import type { PaperResponse } from '@/types/api';
 
@@ -22,6 +24,8 @@ export default function PaperDetail() {
   const queryClient = useQueryClient();
   const [isPdfViewerVisible, setIsPdfViewerVisible] = useState(false);
   const [showCollectionDialog, setShowCollectionDialog] = useState(false);
+  const [isEditingTags, setIsEditingTags] = useState(false);
+  const [tagInput, setTagInput] = useState('');
 
   // Library verisi
   const { data: libraryData } = useQuery({
@@ -36,6 +40,20 @@ export default function PaperDetail() {
     onSuccess: () => {
       toast.success('Makale kutuphaneme eklendi');
       queryClient.invalidateQueries({ queryKey: ['library'] });
+    },
+  });
+
+  // Tag update mutation
+  const tagMutation = useMutation({
+    mutationFn: ({ entryId, tags }: { entryId: number; tags: string[] }) =>
+      updateLibraryTags(entryId, tags),
+    onSuccess: () => {
+      toast.success('Etiketler guncellendi');
+      setIsEditingTags(false);
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+    },
+    onError: () => {
+      toast.error('Etiketler guncellenemedi');
     },
   });
 
@@ -120,9 +138,29 @@ export default function PaperDetail() {
     });
   };
 
-  // Makale secimi degistiginde PDF viewer'i otomatik acma.
+  const handleStartEditTags = () => {
+    setTagInput(libraryTags.map((t) => t.name).join(', '));
+    setIsEditingTags(true);
+  };
+
+  const handleSaveTags = () => {
+    if (!libraryEntryId) return;
+    const tags = tagInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    tagMutation.mutate({ entryId: libraryEntryId, tags });
+  };
+
+  const handleCancelEditTags = () => {
+    setIsEditingTags(false);
+    setTagInput('');
+  };
+
+  // Makale secimi degistiginde PDF viewer'i ve tag edit modunu kapat.
   useEffect(() => {
     setIsPdfViewerVisible(false);
+    setIsEditingTags(false);
   }, [selectedPaperId, activeTab]);
 
   return (
@@ -197,7 +235,77 @@ export default function PaperDetail() {
               )}
 
               {/* Etiketler */}
-              {libraryTags.length > 0 && (
+              {libraryEntryId && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Tag className="h-4 w-4" />
+                    <span className="text-sm font-medium">Etiketler</span>
+                    {!isEditingTags && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={handleStartEditTags}
+                        title="Etiketleri Duzenle"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {isEditingTags ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        placeholder="Etiketleri virgul ile ayirin (orn: makine ogrenmesi, derin ogrenme)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveTags();
+                          if (e.key === 'Escape') handleCancelEditTags();
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveTags}
+                          disabled={tagMutation.isPending}
+                        >
+                          {tagMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Check className="h-3 w-3 mr-1" />
+                          )}
+                          Kaydet
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleCancelEditTags}
+                        >
+                          Vazgec
+                        </Button>
+                      </div>
+                    </div>
+                  ) : libraryTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {libraryTags.map((tag) => (
+                        <Badge key={tag.id} variant="secondary" className="gap-1 text-xs">
+                          <Tag className="h-3 w-3" />
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Henuz etiket eklenmemis. Kalem ikonuna tiklayarak ekleyin.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Etiketler - search tab'inda (read-only) */}
+              {!libraryEntryId && libraryTags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {libraryTags.map((tag) => (
                     <Badge key={tag.id} variant="secondary" className="gap-1 text-xs">

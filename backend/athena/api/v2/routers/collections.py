@@ -26,6 +26,7 @@ TAG_METADATA = {
     "summary_sync": "Koleksiyon İçeriğini Senkronize Et",
     "summary_add": "Koleksiyona Makale Ekle",
     "summary_by_entry": "Makalenin Koleksiyonlarını Getir",
+    "summary_remove_entry": "Koleksiyondan Makale Çıkar",
 }
 
 
@@ -348,6 +349,46 @@ async def add_entries_to_collection(
         added=len(to_add),
         already_exists=len(already_exists),
     )
+
+
+@router.delete(
+    "/{collection_id}/entries/{entry_id}",
+    summary=TAG_METADATA["summary_remove_entry"],
+    response_description="Çıkarma onay mesajı",
+)
+async def remove_entry_from_collection(
+    collection_id: int,
+    entry_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Belirtilen makaleyi koleksiyondan çıkarır.
+
+    Makale **kütüphaneden silinmez**, yalnızca bu koleksiyonla olan ilişkisi kaldırılır.
+    """
+    collection = await db.execute(
+        select(Collection)
+        .options(selectinload(Collection.entries))
+        .where(Collection.id == collection_id)
+    )
+    collection_obj = collection.scalar_one_or_none()
+    if not collection_obj:
+        raise HTTPException(status_code=404, detail="Koleksiyon bulunamadi")
+
+    original_count = len(collection_obj.entries)
+    collection_obj.entries = [e for e in collection_obj.entries if e.id != entry_id]
+
+    if len(collection_obj.entries) == original_count:
+        raise HTTPException(
+            status_code=404, detail="Makale bu koleksiyonda bulunamadi"
+        )
+
+    await db.commit()
+
+    logger.info(
+        f"Entry removed from collection: collection_id={collection_id}, entry_id={entry_id}"
+    )
+
+    return {"status": "removed", "collection_id": collection_id, "entry_id": entry_id}
 
 
 @router.get(

@@ -1,6 +1,8 @@
 import re
 import unicodedata
+from pathlib import Path
 
+from loguru import logger
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -149,6 +151,77 @@ class LibraryService:
         result = await self.db.execute(query)
         entries = result.unique().scalars().all()
         return list(entries), total
+
+    async def delete_library_entry(
+        self, entry_id: int, data_dir: Path
+    ) -> bool:
+        """Kütüphane kaydını ve varsa PDF dosyasını siler.
+
+        Returns:
+            True: Başarıyla silindi, False: Kayıt bulunamadı
+        """
+        stmt = select(LibraryEntry).where(LibraryEntry.id == entry_id)
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one_or_none()
+
+        if not entry:
+            return False
+
+        # Fiziksel PDF dosyasını sil
+        if entry.file_path:
+            from athena.core.file_paths import resolve_data_file_path
+
+            resolved = resolve_data_file_path(entry.file_path, data_dir)
+            if resolved and resolved.is_file():
+                try:
+                    resolved.unlink()
+                    logger.info(f"PDF deleted: {resolved}")
+                except OSError as e:
+                    logger.warning(f"PDF silinemedi: {resolved} - {e}")
+
+        await self.db.delete(entry)
+        await self.db.commit()
+        return True
+
+    async def update_tags(
+        self, entry_id: int, tag_names: list[str]
+    ) -> LibraryEntry | None:
+        """Kütüphane kaydının etiketlerini verilen listeyle değiştirir (overwrite).
+
+        Returns:
+            Güncellenmiş LibraryEntry veya None (kayıt bulunamadı)
+        """
+        stmt = select(LibraryEntry).where(LibraryEntry.id == entry_id)
+        result = await self.db.execute(stmt)
+        entry = result.scalar_one_or_none()
+
+        if not entry:
+            return None
+
+        # Mevcut tag'leri yükle ve temizle
+        await self.db.refresh(entry, ["tags"])
+        entry.tags.clear()
+
+        # Yeni tag'leri bul/oluştur ve ekle
+        for raw_name in tag_names:
+            name = raw_name.strip().lower()[:100]
+            if not name:
+                continue
+
+            tag_stmt = select(Tag).where(Tag.name == name)
+            tag_result = await self.db.execute(tag_stmt)
+            tag = tag_result.scalar_one_or_none()
+
+            if not tag:
+                tag = Tag(name=name)
+                self.db.add(tag)
+                await self.db.flush()
+
+            entry.tags.append(tag)
+
+        await self.db.commit()
+        await self.db.refresh(entry, ["tags"])
+        return entry
 
     async def enrich_missing_metadata(self, limit: int = 20) -> dict:
         """Kutuphanedeki eksik metadata'lari dis kaynaklardan tamamlar.

@@ -12,7 +12,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useUIStore } from '@/stores/ui-store';
-import { fetchDownloadStats, fetchLibrary, retryDownloads } from '@/services/library';
+import { deleteLibraryEntry, fetchDownloadStats, fetchLibrary, retryDownloads } from '@/services/library';
+import { removeEntryFromCollection } from '@/services/collections';
 import LibraryItem from '@/components/LibraryItem';
 import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 
@@ -94,6 +95,32 @@ export default function LibraryList() {
     },
     onError: () => {
       toast.error('Takili indirmeler tekrar denenemedi');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteLibraryEntry,
+    onSuccess: () => {
+      toast.success('Makale kutuphaneden silindi');
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['download-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+    },
+    onError: () => {
+      toast.error('Makale silinemedi');
+    },
+  });
+
+  const removeFromCollectionMutation = useMutation({
+    mutationFn: ({ collectionId, entryId }: { collectionId: number; entryId: number }) =>
+      removeEntryFromCollection(collectionId, entryId),
+    onSuccess: () => {
+      toast.success('Makale projeden cikarildi');
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+    },
+    onError: () => {
+      toast.error('Makale projeden cikarilamadi');
     },
   });
 
@@ -270,6 +297,15 @@ export default function LibraryList() {
                   entry={entry}
                   isSelected={selectedPaperId === `library-${entry.id}`}
                   onClick={() => setSelectedPaperId(`library-${entry.id}`)}
+                  onDelete={(id) => deleteMutation.mutate(id)}
+                  onRemoveFromCollection={
+                    selectedCollectionId
+                      ? (entryId) => removeFromCollectionMutation.mutate({
+                          collectionId: selectedCollectionId,
+                          entryId,
+                        })
+                      : undefined
+                  }
                   isChecked={selectedEntryIds.has(entry.id)}
                   onToggleSelect={() => handleToggleSelect(entry.id)}
                 />

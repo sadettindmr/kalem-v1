@@ -225,6 +225,14 @@ library_tags  (library_entry_id, tag_id)
 | POST | `/api/v2/library/retry-downloads` | Retry stuck downloads |
 | GET | `/api/v2/library/export` | Export library (CSV/XLSX) |
 | GET | `/api/v2/library/download-zip` | Download PDFs as ZIP |
+| DELETE | `/api/v2/library/{entry_id}` | Delete library entry + PDF |
+| PUT | `/api/v2/library/{entry_id}/tags` | Update entry tags (overwrite) |
+| GET | `/api/v2/collections` | List collections with counts |
+| POST | `/api/v2/collections` | Create collection |
+| DELETE | `/api/v2/collections/{id}` | Delete collection |
+| POST | `/api/v2/collections/{id}/entries/add` | Add entries to collection |
+| DELETE | `/api/v2/collections/{cid}/entries/{eid}` | Remove entry from collection |
+| GET | `/api/v2/collections/by-entry/{eid}` | Get entry's collections |
 | GET | `/api/v2/system/settings` | Get runtime settings |
 | PUT | `/api/v2/system/settings` | Update runtime settings |
 | POST | `/api/v2/system/reset` | Reset system (requires confirmation) |

@@ -35,3 +35,13 @@ export async function addEntriesToCollection(
 export async function getEntryCollections(entryId: number): Promise<{ collection_ids: number[] }> {
   return api.get<never, { collection_ids: number[] }>(`/collections/by-entry/${entryId}`);
 }
+
+/**
+ * Koleksiyondan tek bir makaleyi çıkarır (kütüphaneden silmez)
+ */
+export async function removeEntryFromCollection(
+  collectionId: number,
+  entryId: number,
+): Promise<{ status: string }> {
+  return api.delete<never, { status: string }>(`/collections/${collectionId}/entries/${entryId}`);
+}
