@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://athena:secure_password@postgres_db:5432/athena_core"
+    database_url: str = (
+        "postgresql+asyncpg://athena:secure_password@postgres_db:5432/athena_core"
+    )
 
     # Redis
     redis_url: str = "redis://redis_cache:6379/0"
@@ -34,7 +36,9 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "INFO"  # Log seviyesi: DEBUG, INFO, WARNING, ERROR
     data_dir: str = "/data/library"  # PDF dosyaları için klasör
-    outbound_proxy: Optional[str] = None  # Tum dis HTTP istekleri icin opsiyonel proxy URL
+    outbound_proxy: Optional[
+        str
+    ] = None  # Tum dis HTTP istekleri icin opsiyonel proxy URL
 
     # API Settings
     semantic_scholar_api_key: str = ""  # Semantic Scholar API key (rate limit için)

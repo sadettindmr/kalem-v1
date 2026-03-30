@@ -1,8 +1,8 @@
-from typing import Literal, Optional
-from pathlib import Path
-from io import BytesIO
-from zipfile import ZIP_DEFLATED, ZipFile
 from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+from typing import Literal, Optional
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -12,8 +12,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from athena.core.database import get_db
 from athena.core.config import get_settings
+from athena.core.database import get_db
 from athena.core.file_paths import resolve_data_file_path, to_relative_data_path
 from athena.models.associations import collection_entries
 from athena.models.author import Author
@@ -29,7 +29,11 @@ from athena.schemas.library import (
 from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource
 from athena.services.export import ExportService
 from athena.services.library import LibraryService
-from athena.tasks.downloader import download_paper_task, retry_stuck_downloads, retry_all_incomplete_downloads
+from athena.tasks.downloader import (
+    download_paper_task,
+    retry_all_incomplete_downloads,
+    retry_stuck_downloads,
+)
 
 router = APIRouter(prefix="/library", tags=["Library"])
 
@@ -114,8 +118,12 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     """Kütüphaneye makale ekleme yanıtı."""
 
-    status: str = Field(..., description="İşlem durumu (queued veya saved)", examples=["queued"])
-    entry_id: int = Field(..., description="Oluşturulan library entry ID", examples=[42])
+    status: str = Field(
+        ..., description="İşlem durumu (queued veya saved)", examples=["queued"]
+    )
+    entry_id: int = Field(
+        ..., description="Oluşturulan library entry ID", examples=[42]
+    )
 
 
 @router.post(
@@ -138,7 +146,9 @@ async def ingest_paper(
     service = LibraryService(db)
     entry = await service.add_paper_to_library(request.paper, request.search_query)
 
-    logger.info(f"Paper added to library: entry_id={entry.id}, paper_id={entry.paper_id}")
+    logger.info(
+        f"Paper added to library: entry_id={entry.id}, paper_id={entry.paper_id}"
+    )
 
     # 2. Download task'i kuyruğa ekle (broker bağlantı hatası olabilir)
     status = "queued"
@@ -173,10 +183,20 @@ class BulkIngestResponse(BaseModel):
     """Toplu ekleme yanıtı."""
 
     status: str = Field(..., description="İşlem durumu", examples=["queued"])
-    added_count: int = Field(..., description="Yeni eklenen makale sayısı", examples=[5])
-    duplicate_count: int = Field(default=0, description="Zaten kayıtlı mükerrer sayısı", examples=[2])
-    failed_count: int = Field(default=0, description="Başarısız ekleme sayısı", examples=[0])
-    entry_ids: list[int] = Field(..., description="Eklenen makalelerin entry ID listesi", examples=[[10, 11, 12, 13, 14]])
+    added_count: int = Field(
+        ..., description="Yeni eklenen makale sayısı", examples=[5]
+    )
+    duplicate_count: int = Field(
+        default=0, description="Zaten kayıtlı mükerrer sayısı", examples=[2]
+    )
+    failed_count: int = Field(
+        default=0, description="Başarısız ekleme sayısı", examples=[0]
+    )
+    entry_ids: list[int] = Field(
+        ...,
+        description="Eklenen makalelerin entry ID listesi",
+        examples=[[10, 11, 12, 13, 14]],
+    )
 
 
 class CheckLibraryRequest(BaseModel):
@@ -279,12 +299,25 @@ async def list_library(
     page: int = Query(default=1, ge=1, description="Sayfa numarası"),
     limit: int = Query(default=20, ge=1, le=100, description="Sayfa başına öğe sayısı"),
     tag: Optional[str] = Query(default=None, description="Etikete göre filtrele"),
-    status: Optional[str] = Query(default=None, description="İndirme durumuna göre filtrele (pending, completed, failed)"),
-    min_citations: Optional[int] = Query(default=None, ge=0, description="Minimum atıf sayısı"),
-    year_start: Optional[int] = Query(default=None, ge=1900, le=2100, description="Başlangıç yılı"),
-    year_end: Optional[int] = Query(default=None, ge=1900, le=2100, description="Bitiş yılı"),
-    search: Optional[str] = Query(default=None, description="Başlık, yazar veya etiket araması"),
-    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
+    status: Optional[str] = Query(
+        default=None,
+        description="İndirme durumuna göre filtrele (pending, completed, failed)",
+    ),
+    min_citations: Optional[int] = Query(
+        default=None, ge=0, description="Minimum atıf sayısı"
+    ),
+    year_start: Optional[int] = Query(
+        default=None, ge=1900, le=2100, description="Başlangıç yılı"
+    ),
+    year_end: Optional[int] = Query(
+        default=None, ge=1900, le=2100, description="Bitiş yılı"
+    ),
+    search: Optional[str] = Query(
+        default=None, description="Başlık, yazar veya etiket araması"
+    ),
+    collection_id: Optional[int] = Query(
+        default=None, description="Koleksiyon ID filtresi"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> LibraryListResponse:
     """Kütüphanedeki makaleleri filtreli ve sayfalanmış olarak listeler.
@@ -379,12 +412,24 @@ async def list_library(
 )
 async def download_zip_archive(
     tag: Optional[str] = Query(default=None, description="Etikete gore filtrele"),
-    status: Optional[str] = Query(default=None, description="Indirme durumuna gore filtrele"),
-    min_citations: Optional[int] = Query(default=None, ge=0, description="Minimum atif sayisi"),
-    year_start: Optional[int] = Query(default=None, ge=1900, le=2100, description="Baslangic yili"),
-    year_end: Optional[int] = Query(default=None, ge=1900, le=2100, description="Bitis yili"),
-    search: Optional[str] = Query(default=None, description="Baslik, yazar veya etiket aramasi"),
-    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
+    status: Optional[str] = Query(
+        default=None, description="Indirme durumuna gore filtrele"
+    ),
+    min_citations: Optional[int] = Query(
+        default=None, ge=0, description="Minimum atif sayisi"
+    ),
+    year_start: Optional[int] = Query(
+        default=None, ge=1900, le=2100, description="Baslangic yili"
+    ),
+    year_end: Optional[int] = Query(
+        default=None, ge=1900, le=2100, description="Bitis yili"
+    ),
+    search: Optional[str] = Query(
+        default=None, description="Baslik, yazar veya etiket aramasi"
+    ),
+    collection_id: Optional[int] = Query(
+        default=None, description="Koleksiyon ID filtresi"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Filtrelenmiş ve indirilmeye hazır PDF dosyalarını ZIP arşivi olarak döndürür.
@@ -447,8 +492,14 @@ async def download_zip_archive(
 class RetryDownloadsResponse(BaseModel):
     """İndirmeleri tekrar deneme yanıtı."""
 
-    status: str = Field(..., description="İşlem durumu (queued veya error)", examples=["queued"])
-    message: str = Field(..., description="Sonuç mesajı", examples=["Takili kalan indirmeler tekrar kuyruga eklendi"])
+    status: str = Field(
+        ..., description="İşlem durumu (queued veya error)", examples=["queued"]
+    )
+    message: str = Field(
+        ...,
+        description="Sonuç mesajı",
+        examples=["Takili kalan indirmeler tekrar kuyruga eklendi"],
+    )
 
 
 @router.post(
@@ -495,23 +546,37 @@ class DownloadStatsResponse(BaseModel):
     """İndirme istatistikleri yanıtı."""
 
     pending: int = Field(default=0, description="Bekleyen indirme sayısı", examples=[3])
-    downloading: int = Field(default=0, description="Devam eden indirme sayısı", examples=[1])
-    completed: int = Field(default=0, description="Tamamlanan indirme sayısı", examples=[120])
+    downloading: int = Field(
+        default=0, description="Devam eden indirme sayısı", examples=[1]
+    )
+    completed: int = Field(
+        default=0, description="Tamamlanan indirme sayısı", examples=[120]
+    )
     failed: int = Field(default=0, description="Başarısız indirme sayısı", examples=[5])
     total: int = Field(default=0, description="Toplam kayıt sayısı", examples=[129])
-    failed_entries: list[dict] = Field(default_factory=list, description="Başarısız kayıtların detayları")
+    failed_entries: list[dict] = Field(
+        default_factory=list, description="Başarısız kayıtların detayları"
+    )
 
 
 class EnrichMetadataResponse(BaseModel):
     """Eksik metadata tamamlama yanıtı."""
 
     status: str = Field(..., description="İşlem durumu", examples=["completed"])
-    message: str = Field(..., description="Sonuç mesajı", examples=["Eksik metadata tamamlama islemi tamamlandi"])
+    message: str = Field(
+        ...,
+        description="Sonuç mesajı",
+        examples=["Eksik metadata tamamlama islemi tamamlandi"],
+    )
     processed: int = Field(default=0, description="İşlenen kayıt sayısı", examples=[20])
-    updated: int = Field(default=0, description="Güncellenen kayıt sayısı", examples=[15])
+    updated: int = Field(
+        default=0, description="Güncellenen kayıt sayısı", examples=[15]
+    )
     skipped: int = Field(default=0, description="Atlanan kayıt sayısı", examples=[3])
     failed: int = Field(default=0, description="Başarısız kayıt sayısı", examples=[2])
-    details: list[dict] = Field(default_factory=list, description="Kayıt bazlı işlem detayları")
+    details: list[dict] = Field(
+        default_factory=list, description="Kayıt bazlı işlem detayları"
+    )
 
 
 @router.post(
@@ -521,7 +586,9 @@ class EnrichMetadataResponse(BaseModel):
     response_description="İşlenen, güncellenen, atlanan ve başarısız kayıt sayıları",
 )
 async def enrich_metadata(
-    limit: int = Query(default=20, ge=1, le=100, description="Maksimum islenecek kayit"),
+    limit: int = Query(
+        default=20, ge=1, le=100, description="Maksimum islenecek kayit"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> EnrichMetadataResponse:
     """Kütüphanedeki eksik metadata alanlarını (yıl, atıf, özet vb.) dış kaynaklardan tamamlar.
@@ -557,13 +624,10 @@ async def download_stats(
     Başarısız kayıtların detaylarını (id, başlık, son güncelleme) içerir.
     """
     # Status bazli sayimlar
-    count_query = (
-        select(
-            LibraryEntry.download_status,
-            func.count(LibraryEntry.id),
-        )
-        .group_by(LibraryEntry.download_status)
-    )
+    count_query = select(
+        LibraryEntry.download_status,
+        func.count(LibraryEntry.id),
+    ).group_by(LibraryEntry.download_status)
     result = await db.execute(count_query)
     counts = {row[0].value: row[1] for row in result.all()}
 
@@ -585,12 +649,16 @@ async def download_stats(
 
     failed_entries = []
     for entry in failed_entries_list:
-        failed_entries.append({
-            "id": entry.id,
-            "paper_id": entry.paper_id,
-            "title": entry.paper.title if entry.paper else "Bilinmeyen",
-            "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
-        })
+        failed_entries.append(
+            {
+                "id": entry.id,
+                "paper_id": entry.paper_id,
+                "title": entry.paper.title if entry.paper else "Bilinmeyen",
+                "updated_at": entry.updated_at.isoformat()
+                if entry.updated_at
+                else None,
+            }
+        )
 
     return DownloadStatsResponse(
         pending=pending,
@@ -616,7 +684,9 @@ async def export_library(
         default=None,
         description="Etiket filtresi (virgülle ayrılmış)",
     ),
-    collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
+    collection_id: Optional[int] = Query(
+        default=None, description="Koleksiyon ID filtresi"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Kütüphane verilerini CSV veya XLSX formatında dışa aktarır.

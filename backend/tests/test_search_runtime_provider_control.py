@@ -4,8 +4,7 @@ import sys
 import types
 from pathlib import Path
 
-from athena.schemas.search import PaperResponse, PaperSource
-from athena.schemas.search import SearchFilters
+from athena.schemas.search import PaperResponse, PaperSource, SearchFilters
 
 
 def _load_search_module():
@@ -38,8 +37,12 @@ def _load_search_module():
     sys.modules["athena.adapters.base"] = adapters_base_stub
     sys.modules["athena.adapters"] = adapters_stub
 
-    module_path = Path(__file__).resolve().parents[1] / "athena" / "services" / "search.py"
-    spec = importlib.util.spec_from_file_location("search_runtime_test_module", module_path)
+    module_path = (
+        Path(__file__).resolve().parents[1] / "athena" / "services" / "search.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "search_runtime_test_module", module_path
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

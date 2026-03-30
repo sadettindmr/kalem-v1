@@ -5,7 +5,12 @@ from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings
-from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
+from athena.schemas.search import (
+    AuthorSchema,
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+)
 
 
 class CrossrefProvider(BaseSearchProvider):
@@ -125,6 +130,7 @@ class CrossrefProvider(BaseSearchProvider):
             if abstract:
                 # <jats:p> gibi XML tag'lerini temizle
                 import re
+
                 abstract = re.sub(r"<[^>]+>", "", abstract).strip()
 
             # Year

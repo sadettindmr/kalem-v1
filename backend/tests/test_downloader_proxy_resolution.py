@@ -14,12 +14,20 @@ def _load_downloader_module():
         sys.modules["loguru"] = types.SimpleNamespace(logger=logger_stub)
 
     if "celery" not in sys.modules:
-        sys.modules["celery"] = types.SimpleNamespace(shared_task=lambda *a, **k: (lambda f: f))
+        sys.modules["celery"] = types.SimpleNamespace(
+            shared_task=lambda *a, **k: (lambda f: f)
+        )
     if "celery.exceptions" not in sys.modules:
-        sys.modules["celery.exceptions"] = types.SimpleNamespace(MaxRetriesExceededError=Exception)
+        sys.modules["celery.exceptions"] = types.SimpleNamespace(
+            MaxRetriesExceededError=Exception
+        )
 
-    module_path = Path(__file__).resolve().parents[1] / "athena" / "tasks" / "downloader.py"
-    spec = importlib.util.spec_from_file_location("downloader_proxy_test_module", module_path)
+    module_path = (
+        Path(__file__).resolve().parents[1] / "athena" / "tasks" / "downloader.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "downloader_proxy_test_module", module_path
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -54,7 +62,10 @@ class _Row:
 def test_proxy_resolution_uses_db_proxy_when_enabled():
     module = _load_downloader_module()
     db = _FakeDb(row=_Row(True, "http://proxy.local:8080"))
-    assert module._resolve_runtime_proxy_url(db, "http://fallback:9000") == "http://proxy.local:8080"
+    assert (
+        module._resolve_runtime_proxy_url(db, "http://fallback:9000")
+        == "http://proxy.local:8080"
+    )
 
 
 def test_proxy_resolution_returns_none_when_disabled():
@@ -66,4 +77,7 @@ def test_proxy_resolution_returns_none_when_disabled():
 def test_proxy_resolution_fallback_on_db_error():
     module = _load_downloader_module()
     db = _FakeDb(should_raise=True)
-    assert module._resolve_runtime_proxy_url(db, "http://fallback:9000") == "http://fallback:9000"
+    assert (
+        module._resolve_runtime_proxy_url(db, "http://fallback:9000")
+        == "http://fallback:9000"
+    )

@@ -1,12 +1,17 @@
 import asyncio
 
-import httpx
 import feedparser
+import httpx
 from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings
-from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
+from athena.schemas.search import (
+    AuthorSchema,
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+)
 
 
 class ArxivProvider(BaseSearchProvider):
@@ -63,7 +68,9 @@ class ArxivProvider(BaseSearchProvider):
         try:
             for attempt in range(1, self.RETRY_ATTEMPTS + 1):
                 all_entries = []
-                async with httpx.AsyncClient(timeout=60.0, follow_redirects=True, trust_env=False) as client:
+                async with httpx.AsyncClient(
+                    timeout=60.0, follow_redirects=True, trust_env=False
+                ) as client:
                     start = 0
                     while start < self.MAX_RESULTS:
                         params = {
@@ -134,7 +141,9 @@ class ArxivProvider(BaseSearchProvider):
             logger.error(f"Unexpected error in arXiv search: {e}")
             return []
 
-    def _should_retry_low_count(self, query: str, result_count: int, attempt: int) -> bool:
+    def _should_retry_low_count(
+        self, query: str, result_count: int, attempt: int
+    ) -> bool:
         multi_term_query = len(query.split()) >= 2
         return (
             multi_term_query

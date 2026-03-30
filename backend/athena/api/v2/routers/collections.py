@@ -59,8 +59,14 @@ class CollectionSchema(BaseModel):
         default=None,
         description="Koleksiyon açıklaması",
     )
-    created_at: str = Field(..., description="Oluşturulma tarihi (ISO 8601)", examples=["2024-01-15T10:30:00"])
-    entry_count: int = Field(default=0, description="Koleksiyondaki makale sayısı", examples=[24])
+    created_at: str = Field(
+        ...,
+        description="Oluşturulma tarihi (ISO 8601)",
+        examples=["2024-01-15T10:30:00"],
+    )
+    entry_count: int = Field(
+        default=0, description="Koleksiyondaki makale sayısı", examples=[24]
+    )
 
     model_config = {"from_attributes": True}
 
@@ -103,8 +109,12 @@ class AddEntriesResponse(BaseModel):
     """Ekleme yanıtı."""
 
     status: str = Field(..., description="İşlem durumu", examples=["added"])
-    added: int = Field(default=0, description="Yeni eklenen makale sayısı", examples=[2])
-    already_exists: int = Field(default=0, description="Zaten mevcut olan makale sayısı", examples=[1])
+    added: int = Field(
+        default=0, description="Yeni eklenen makale sayısı", examples=[2]
+    )
+    already_exists: int = Field(
+        default=0, description="Zaten mevcut olan makale sayısı", examples=[1]
+    )
 
 
 class EntryCollectionsResponse(BaseModel):
@@ -138,13 +148,10 @@ async def list_collections(
     collections = result.scalars().all()
 
     # Her koleksiyonun entry sayisini hesapla
-    count_query = (
-        select(
-            collection_entries.c.collection_id,
-            func.count(collection_entries.c.entry_id).label("cnt"),
-        )
-        .group_by(collection_entries.c.collection_id)
-    )
+    count_query = select(
+        collection_entries.c.collection_id,
+        func.count(collection_entries.c.entry_id).label("cnt"),
+    ).group_by(collection_entries.c.collection_id)
     count_result = await db.execute(count_query)
     counts = {row[0]: row[1] for row in count_result.all()}
 
@@ -177,11 +184,11 @@ async def create_collection(
     Aynı isimde koleksiyon varsa **409 Conflict** hatası döner.
     """
     # Ayni isimde koleksiyon var mi kontrol et
-    existing = await db.execute(
-        select(Collection).where(Collection.name == data.name)
-    )
+    existing = await db.execute(select(Collection).where(Collection.name == data.name))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Bu isimde bir koleksiyon zaten mevcut")
+        raise HTTPException(
+            status_code=409, detail="Bu isimde bir koleksiyon zaten mevcut"
+        )
 
     collection = Collection(name=data.name, description=data.description)
     db.add(collection)
@@ -269,7 +276,9 @@ async def sync_collection_entries(
 
     # Cikarilacak entry'leri kaldir
     if to_remove:
-        collection_obj.entries = [e for e in collection_obj.entries if e.id not in to_remove]
+        collection_obj.entries = [
+            e for e in collection_obj.entries if e.id not in to_remove
+        ]
 
     await db.commit()
 
@@ -366,6 +375,8 @@ async def get_entry_collections(
 
     collection_ids = [c.id for c in entry_obj.collections]
 
-    logger.debug(f"Entry collections fetched: entry_id={entry_id}, count={len(collection_ids)}")
+    logger.debug(
+        f"Entry collections fetched: entry_id={entry_id}, count={len(collection_ids)}"
+    )
 
     return EntryCollectionsResponse(collection_ids=collection_ids)

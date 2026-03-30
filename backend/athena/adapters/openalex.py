@@ -3,7 +3,12 @@ from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings
-from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
+from athena.schemas.search import (
+    AuthorSchema,
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+)
 
 
 class OpenAlexProvider(BaseSearchProvider):
@@ -45,7 +50,9 @@ class OpenAlexProvider(BaseSearchProvider):
 
         # Server-side yil filtresi
         if filters.year_start and filters.year_end:
-            params["filter"] = f"publication_year:{filters.year_start}-{filters.year_end}"
+            params[
+                "filter"
+            ] = f"publication_year:{filters.year_start}-{filters.year_end}"
         elif filters.year_start:
             params["filter"] = f"publication_year:{filters.year_start}-"
         elif filters.year_end:
@@ -82,7 +89,9 @@ class OpenAlexProvider(BaseSearchProvider):
                     # Sonraki sayfa icin cursor'u guncelle
                     params["cursor"] = next_cursor
 
-            logger.info(f"OpenAlex cursor pagination: {len(all_results)} results fetched")
+            logger.info(
+                f"OpenAlex cursor pagination: {len(all_results)} results fetched"
+            )
             return self._parse_results(all_results, filters)
 
         except httpx.HTTPStatusError as e:
@@ -165,7 +174,9 @@ class OpenAlexProvider(BaseSearchProvider):
 
             paper = PaperResponse(
                 title=item.get("title") or "Untitled",
-                abstract=self._reconstruct_abstract(item.get("abstract_inverted_index")),
+                abstract=self._reconstruct_abstract(
+                    item.get("abstract_inverted_index")
+                ),
                 year=year,
                 citation_count=citation_count,
                 venue=venue,

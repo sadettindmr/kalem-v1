@@ -6,11 +6,23 @@ from dataclasses import dataclass
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from athena.adapters import ArxivProvider, CoreProvider, CrossrefProvider, OpenAlexProvider, SemanticScholarProvider
+from athena.adapters import (
+    ArxivProvider,
+    CoreProvider,
+    CrossrefProvider,
+    OpenAlexProvider,
+    SemanticScholarProvider,
+)
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings as get_env_settings
 from athena.models.settings import DEFAULT_ENABLED_PROVIDERS
-from athena.schemas.search import PaperResponse, PaperSource, SearchFilters, SearchMeta, SearchResponse
+from athena.schemas.search import (
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+    SearchMeta,
+    SearchResponse,
+)
 from athena.services.settings import UserSettingsService
 
 
@@ -106,7 +118,9 @@ class SearchService:
         all_papers: list[PaperResponse] = []
         for i, result in enumerate(results):
             provider_class = type(active_providers[i]).__name__
-            raw_key, display_name = provider_raw_keys.get(provider_class, (None, provider_class))
+            raw_key, display_name = provider_raw_keys.get(
+                provider_class, (None, provider_class)
+            )
 
             if isinstance(result, Exception):
                 error_msg = f"{display_name}: {type(result).__name__} - {result}"
@@ -131,11 +145,17 @@ class SearchService:
         # "federated learning, sepsis" → [["federated", "learning"], ["sepsis"]]
         # Her gruptan en az bir kelime baslik/ozette gecmeli
         raw_terms = [t.strip() for t in filters.query.lower().split(",") if t.strip()]
-        keyword_groups = [t.split() for t in raw_terms] if raw_terms else [normalized_query.lower().split()]
+        keyword_groups = (
+            [t.split() for t in raw_terms]
+            if raw_terms
+            else [normalized_query.lower().split()]
+        )
         filtered_papers = self._filter_by_relevance(all_papers, keyword_groups)
         relevance_removed = len(all_papers) - len(filtered_papers)
         if relevance_removed > 0:
-            logger.info(f"Relevance filter: {relevance_removed} irrelevant papers removed")
+            logger.info(
+                f"Relevance filter: {relevance_removed} irrelevant papers removed"
+            )
 
         # Deduplication
         unique_papers = self._deduplicate(filtered_papers)
@@ -189,9 +209,9 @@ class SearchService:
 
     # Kaynak oncelik sirasi: dusuk sayi = yuksek oncelik
     SOURCE_PRIORITY: dict[PaperSource, int] = {
-        PaperSource.SEMANTIC: 1,   # En zengin metadata
-        PaperSource.CROSSREF: 2,   # En dogru DOI
-        PaperSource.ARXIV: 3,      # En guncel pre-print
+        PaperSource.SEMANTIC: 1,  # En zengin metadata
+        PaperSource.CROSSREF: 2,  # En dogru DOI
+        PaperSource.ARXIV: 3,  # En guncel pre-print
         PaperSource.OPENALEX: 4,
         PaperSource.CORE: 5,
         PaperSource.MANUAL: 6,
@@ -220,7 +240,19 @@ class SearchService:
         text = re.sub(r"[^a-z0-9\s]", "", text)
 
         # Stop word'leri kaldir
-        stop_words = {"the", "a", "an", "of", "in", "on", "for", "and", "or", "to", "with"}
+        stop_words = {
+            "the",
+            "a",
+            "an",
+            "of",
+            "in",
+            "on",
+            "for",
+            "and",
+            "or",
+            "to",
+            "with",
+        }
         words = text.split()
         words = [w for w in words if w not in stop_words]
 
@@ -240,8 +272,8 @@ class SearchService:
         4. OpenAlex
         5. CORE
         """
-        seen_dois: dict[str, int] = {}           # doi -> unique_papers index
-        seen_titles: dict[str, int] = {}          # normalized_title -> unique_papers index
+        seen_dois: dict[str, int] = {}  # doi -> unique_papers index
+        seen_titles: dict[str, int] = {}  # normalized_title -> unique_papers index
         unique_papers: list[PaperResponse] = []
 
         for paper in papers:
@@ -294,7 +326,9 @@ class SearchService:
         return new_priority < existing_priority
 
     @staticmethod
-    def _filter_by_relevance(papers: list[PaperResponse], keyword_groups: list[list[str]]) -> list[PaperResponse]:
+    def _filter_by_relevance(
+        papers: list[PaperResponse], keyword_groups: list[list[str]]
+    ) -> list[PaperResponse]:
         """Arama kelimeleriyle alakasiz sonuclari filtreler.
 
         Virgullerle ayrilmis her konsept grubundan en az bir kelime
@@ -319,10 +353,7 @@ class SearchService:
             searchable = f"{title_lower} {abstract_lower}"
 
             # Her konsept grubundan en az bir kelime gecmeli (AND mantigi)
-            if all(
-                any(kw in searchable for kw in group)
-                for group in keyword_groups
-            ):
+            if all(any(kw in searchable for kw in group) for group in keyword_groups):
                 relevant.append(paper)
 
         return relevant

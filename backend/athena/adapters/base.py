@@ -9,6 +9,7 @@ class BaseSearchProvider(ABC):
     Tüm arama sağlayıcıları (Semantic Scholar, OpenAlex, vb.)
     bu sınıftan türetilmeli ve search metodunu implement etmelidir.
     """
+
     provider_id: str = "base"
 
     def __init__(self) -> None:

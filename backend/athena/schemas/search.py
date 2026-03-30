@@ -32,7 +32,9 @@ class PaperResponse(BaseModel):
     abstract: Optional[str] = Field(
         default=None,
         description="Makalenin özeti",
-        examples=["This paper presents a comprehensive survey of deep learning methods..."],
+        examples=[
+            "This paper presents a comprehensive survey of deep learning methods..."
+        ],
     )
     year: Optional[int] = Field(
         default=None,
@@ -135,15 +137,33 @@ class SearchFilters(BaseModel):
 class SearchMeta(BaseModel):
     """Arama sonuç istatistikleri."""
 
-    raw_semantic: int = Field(default=0, description="Semantic Scholar ham sonuç sayısı", examples=[50])
-    raw_openalex: int = Field(default=0, description="OpenAlex ham sonuç sayısı", examples=[50])
-    raw_arxiv: int = Field(default=0, description="arXiv ham sonuç sayısı", examples=[25])
-    raw_crossref: int = Field(default=0, description="Crossref ham sonuç sayısı", examples=[30])
+    raw_semantic: int = Field(
+        default=0, description="Semantic Scholar ham sonuç sayısı", examples=[50]
+    )
+    raw_openalex: int = Field(
+        default=0, description="OpenAlex ham sonuç sayısı", examples=[50]
+    )
+    raw_arxiv: int = Field(
+        default=0, description="arXiv ham sonuç sayısı", examples=[25]
+    )
+    raw_crossref: int = Field(
+        default=0, description="Crossref ham sonuç sayısı", examples=[30]
+    )
     raw_core: int = Field(default=0, description="CORE ham sonuç sayısı", examples=[20])
-    relevance_removed: int = Field(default=0, description="Alaka dışı olduğu için elenen sonuç sayısı", examples=[15])
-    duplicates_removed: int = Field(default=0, description="Elenen mükerrer sonuç sayısı", examples=[40])
-    total: int = Field(default=0, description="Dedup sonrası toplam sonuç sayısı", examples=[120])
-    errors: list[str] = Field(default_factory=list, description="Hata veren kaynak bilgileri")
+    relevance_removed: int = Field(
+        default=0,
+        description="Alaka dışı olduğu için elenen sonuç sayısı",
+        examples=[15],
+    )
+    duplicates_removed: int = Field(
+        default=0, description="Elenen mükerrer sonuç sayısı", examples=[40]
+    )
+    total: int = Field(
+        default=0, description="Dedup sonrası toplam sonuç sayısı", examples=[120]
+    )
+    errors: list[str] = Field(
+        default_factory=list, description="Hata veren kaynak bilgileri"
+    )
 
 
 class SearchResponse(BaseModel):

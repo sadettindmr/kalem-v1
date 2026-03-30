@@ -7,7 +7,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from athena.api.v2.routers import collections, library, search, settings as settings_router, system
+from athena.api.v2.routers import collections, library, search
+from athena.api.v2.routers import settings as settings_router
+from athena.api.v2.routers import system
 from athena.core.config import get_settings
 from athena.core.exceptions import AthenaError, ErrorCode
 from athena.core.file_paths import resolve_data_file_path

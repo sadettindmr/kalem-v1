@@ -35,4 +35,3 @@ def test_normalize_providers_filters_invalid_and_duplicates():
         ["Semantic", "semantic", "openalex", "invalid-provider", " "]
     )
     assert normalized == ["semantic", "openalex"]
-

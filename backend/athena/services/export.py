@@ -71,7 +71,9 @@ class ExportService:
 
         # Tag filtresi (search_query varsa)
         if search_query:
-            tag_names = [t.strip().lower() for t in search_query.split(",") if t.strip()]
+            tag_names = [
+                t.strip().lower() for t in search_query.split(",") if t.strip()
+            ]
             if tag_names:
                 query = query.join(LibraryEntry.tags).where(Tag.name.in_(tag_names))
 
@@ -107,11 +109,17 @@ class ExportService:
                 "DOI / Link": doi_or_link,
                 "Keywords": "",
                 "Search Words": search_words,
-                "Citation (APA)": self.format_apa(paper.title, paper.authors, paper.year, paper.venue),
-                "Citation (IEEE)": self.format_ieee(paper.title, paper.authors, paper.year, paper.venue),
+                "Citation (APA)": self.format_apa(
+                    paper.title, paper.authors, paper.year, paper.venue
+                ),
+                "Citation (IEEE)": self.format_ieee(
+                    paper.title, paper.authors, paper.year, paper.venue
+                ),
                 citation_col: paper.citation_count,
                 "Source": entry.source.value.title(),
-                "Downloaded": "EVET" if entry.download_status.value == "completed" else "HAYIR",
+                "Downloaded": "EVET"
+                if entry.download_status.value == "completed"
+                else "HAYIR",
                 "Kod/Veri Erişilebilirliği": self._code_data_availability(
                     paper.pdf_url,
                     paper.abstract,
@@ -170,7 +178,11 @@ class ExportService:
         venue: str | None,
     ) -> str:
         """Best-effort APA atif metni olusturur."""
-        author_names = [self._format_author_apa(a.name) for a in authors] if authors else ["Unknown"]
+        author_names = (
+            [self._format_author_apa(a.name) for a in authors]
+            if authors
+            else ["Unknown"]
+        )
         author_text = ", ".join(author_names)
         year_text = str(year) if year else "n.d."
         venue_text = venue or "Unknown Venue"
@@ -184,7 +196,11 @@ class ExportService:
         venue: str | None,
     ) -> str:
         """Best-effort IEEE atif metni olusturur."""
-        author_names = [self._format_author_ieee(a.name) for a in authors] if authors else ["Unknown"]
+        author_names = (
+            [self._format_author_ieee(a.name) for a in authors]
+            if authors
+            else ["Unknown"]
+        )
         author_text = ", ".join(author_names)
         venue_text = venue or "Unknown Venue"
         year_text = str(year) if year else "n.d."
@@ -194,7 +210,11 @@ class ExportService:
     def _code_data_availability(pdf_url: str | None, abstract: str | None) -> str:
         text = f"{pdf_url or ''} {abstract or ''}".lower()
         markers = ("github.com", "gitlab.com", "zenodo")
-        return "Muhtemelen Var" if any(marker in text for marker in markers) else "Belirtilmemiş"
+        return (
+            "Muhtemelen Var"
+            if any(marker in text for marker in markers)
+            else "Belirtilmemiş"
+        )
 
     def _export_csv(self, df: pd.DataFrame) -> tuple[BytesIO, str, str]:
         """DataFrame'i CSV formatında dışa aktarır.
@@ -232,7 +252,9 @@ class ExportService:
                     value = "" if cell.value is None else str(cell.value)
                     if len(value) > max_length:
                         max_length = len(value)
-                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 80)
+                worksheet.column_dimensions[column_letter].width = min(
+                    max_length + 2, 80
+                )
 
         buffer.seek(0)
 

@@ -5,7 +5,12 @@ from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings
-from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
+from athena.schemas.search import (
+    AuthorSchema,
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+)
 
 
 class SemanticScholarProvider(BaseSearchProvider):
@@ -107,7 +112,9 @@ class SemanticScholarProvider(BaseSearchProvider):
             )
             # Kismi sonuclar varsa onlari don
             if all_data:
-                logger.info(f"Returning {len(all_data)} partial results from Semantic Scholar")
+                logger.info(
+                    f"Returning {len(all_data)} partial results from Semantic Scholar"
+                )
                 return self._parse_results(all_data)
             return []
         except httpx.RequestError as e:

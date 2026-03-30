@@ -18,9 +18,9 @@ def resolve_data_file_path(raw_path: str | None, data_dir: Path) -> Path | None:
     candidates: list[str] = [normalized]
 
     if normalized.startswith("/data/library/"):
-        candidates.append(normalized[len("/data/library/"):])
+        candidates.append(normalized[len("/data/library/") :])
     if normalized.startswith("data/library/"):
-        candidates.append(normalized[len("data/library/"):])
+        candidates.append(normalized[len("data/library/") :])
     if normalized.startswith("/"):
         candidates.append(normalized.lstrip("/"))
 

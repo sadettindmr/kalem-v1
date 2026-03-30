@@ -5,7 +5,12 @@ from loguru import logger
 
 from athena.adapters.base import BaseSearchProvider
 from athena.core.config import get_settings
-from athena.schemas.search import AuthorSchema, PaperResponse, PaperSource, SearchFilters
+from athena.schemas.search import (
+    AuthorSchema,
+    PaperResponse,
+    PaperSource,
+    SearchFilters,
+)
 
 
 class CoreProvider(BaseSearchProvider):
@@ -63,11 +68,17 @@ class CoreProvider(BaseSearchProvider):
 
                     # Server-side yil filtresi
                     if filters.year_start and filters.year_end:
-                        params["q"] = f"{filters.query} AND yearPublished>={filters.year_start} AND yearPublished<={filters.year_end}"
+                        params[
+                            "q"
+                        ] = f"{filters.query} AND yearPublished>={filters.year_start} AND yearPublished<={filters.year_end}"
                     elif filters.year_start:
-                        params["q"] = f"{filters.query} AND yearPublished>={filters.year_start}"
+                        params[
+                            "q"
+                        ] = f"{filters.query} AND yearPublished>={filters.year_start}"
                     elif filters.year_end:
-                        params["q"] = f"{filters.query} AND yearPublished<={filters.year_end}"
+                        params[
+                            "q"
+                        ] = f"{filters.query} AND yearPublished<={filters.year_end}"
 
                     response = await client.get(
                         self.BASE_URL, params=params, headers=headers
@@ -162,7 +173,9 @@ class CoreProvider(BaseSearchProvider):
             venue = None
             journal = item.get("journal")
             if journal:
-                venue = journal.get("title") if isinstance(journal, dict) else str(journal)
+                venue = (
+                    journal.get("title") if isinstance(journal, dict) else str(journal)
+                )
 
             paper = PaperResponse(
                 title=title,

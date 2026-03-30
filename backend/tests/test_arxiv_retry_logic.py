@@ -38,17 +38,23 @@ def _load_arxiv_module():
             self.runtime_api_key = None
             self.runtime_contact_email = None
 
-    sys.modules["athena.adapters.base"] = types.SimpleNamespace(BaseSearchProvider=_BaseProviderStub)
+    sys.modules["athena.adapters.base"] = types.SimpleNamespace(
+        BaseSearchProvider=_BaseProviderStub
+    )
     sys.modules["athena.core.config"] = types.SimpleNamespace(
         Settings=object,
         get_settings=lambda: types.SimpleNamespace(
             outbound_proxy=None,
             openalex_email="test@example.com",
-        )
+        ),
     )
 
-    module_path = Path(__file__).resolve().parents[1] / "athena" / "adapters" / "arxiv.py"
-    spec = importlib.util.spec_from_file_location("arxiv_runtime_test_module", module_path)
+    module_path = (
+        Path(__file__).resolve().parents[1] / "athena" / "adapters" / "arxiv.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "arxiv_runtime_test_module", module_path
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

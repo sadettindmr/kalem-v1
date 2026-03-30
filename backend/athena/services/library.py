@@ -5,8 +5,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from athena.models.author import Author
 from athena.models.associations import collection_entries
+from athena.models.author import Author
 from athena.models.library import DownloadStatus, LibraryEntry, SourceType
 from athena.models.paper import Paper
 from athena.models.tag import Tag
@@ -356,7 +356,9 @@ class LibraryService:
 
         # Yeni Paper oluştur
         paper = Paper(
-            doi=paper_data.external_id if paper_data.external_id and paper_data.external_id.startswith("10.") else None,
+            doi=paper_data.external_id
+            if paper_data.external_id and paper_data.external_id.startswith("10.")
+            else None,
             title=paper_data.title,
             title_slug=title_slug,
             abstract=paper_data.abstract,
@@ -430,7 +432,9 @@ class LibraryService:
         Mevcut entry için tags'ı async olarak yüklemeliyiz.
         """
         # Virgülle ayır ve temizle
-        tag_names = [tag.strip().lower() for tag in search_query.split(",") if tag.strip()]
+        tag_names = [
+            tag.strip().lower() for tag in search_query.split(",") if tag.strip()
+        ]
 
         if not tag_names:
             return
@@ -531,11 +535,7 @@ class LibraryService:
             changed = True
 
         # DOI yoksa ve eslesen kayit DOI ise doldur
-        if (
-            not paper.doi
-            and match.external_id
-            and match.external_id.startswith("10.")
-        ):
+        if not paper.doi and match.external_id and match.external_id.startswith("10."):
             paper.doi = match.external_id
             changed = True
 

@@ -8,7 +8,7 @@ import httpx
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 from loguru import logger
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from athena.core.config import get_settings
@@ -99,7 +99,11 @@ def download_paper_task(self, entry_id: int) -> dict:
     runtime_proxy_url = _resolve_runtime_proxy_url(db, settings.outbound_proxy)
     ezproxy_settings = _load_ezproxy_settings(db)
 
-    retry_info = f"(attempt {self.request.retries + 1}/{self.max_retries + 1})" if self.request.retries > 0 else ""
+    retry_info = (
+        f"(attempt {self.request.retries + 1}/{self.max_retries + 1})"
+        if self.request.retries > 0
+        else ""
+    )
     logger.info(f"[Download] Starting entry_id={entry_id} {retry_info}")
 
     try:
@@ -113,7 +117,9 @@ def download_paper_task(self, entry_id: int) -> dict:
             return {"status": "error", "message": "LibraryEntry not found"}
 
         paper = entry.paper
-        logger.info(f"[Download] Paper: id={paper.id}, title='{paper.title[:80]}', doi={paper.doi}")
+        logger.info(
+            f"[Download] Paper: id={paper.id}, title='{paper.title[:80]}', doi={paper.doi}"
+        )
 
         # 2. Status güncelle: downloading
         entry.download_status = DownloadStatus.DOWNLOADING
@@ -123,14 +129,20 @@ def download_paper_task(self, entry_id: int) -> dict:
         pdf_url = _find_pdf_url(paper)
         if not pdf_url and not paper.doi:
             entry.download_status = DownloadStatus.FAILED
-            entry.error_message = "PDF URL bulunamadı. Makale muhtemelen açık erişim değil."
+            entry.error_message = (
+                "PDF URL bulunamadı. Makale muhtemelen açık erişim değil."
+            )
             db.commit()
-            logger.warning(f"[Download] No PDF URL or DOI found: entry_id={entry_id}, paper_id={paper.id}")
+            logger.warning(
+                f"[Download] No PDF URL or DOI found: entry_id={entry_id}, paper_id={paper.id}"
+            )
             return {"status": "failed", "message": "No PDF URL"}
         if pdf_url:
             logger.info(f"[Download] PDF URL found: {pdf_url[:120]}")
         else:
-            logger.info(f"[Download] No direct PDF URL. Will require DOI-based EZProxy fallback.")
+            logger.info(
+                f"[Download] No direct PDF URL. Will require DOI-based EZProxy fallback."
+            )
 
         # 4. Dosya yolu oluştur
         file_path = generate_file_path(paper, settings)
@@ -143,7 +155,9 @@ def download_paper_task(self, entry_id: int) -> dict:
         # 6. Dosya boyutunu kontrol et
         file_size = file_path.stat().st_size
         if file_size < 1024:
-            logger.warning(f"[Download] Suspiciously small file ({file_size} bytes): entry_id={entry_id}")
+            logger.warning(
+                f"[Download] Suspiciously small file ({file_size} bytes): entry_id={entry_id}"
+            )
 
         # 7. Başarılı: Status ve file_path güncelle
         # file_path'i relative (paper_id/filename.pdf) sakla ki /files mount'u ile
@@ -158,7 +172,9 @@ def download_paper_task(self, entry_id: int) -> dict:
         entry.error_message = None  # Başarılı olduğunda hata mesajını temizle
         db.commit()
 
-        logger.info(f"[Download] Completed: entry_id={entry_id}, size={file_size} bytes, path={file_path}")
+        logger.info(
+            f"[Download] Completed: entry_id={entry_id}, size={file_size} bytes, path={file_path}"
+        )
         return {
             "status": "completed",
             "entry_id": entry_id,
@@ -168,7 +184,9 @@ def download_paper_task(self, entry_id: int) -> dict:
 
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         error_type = type(e).__name__
-        logger.warning(f"[Download] HTTP error: entry_id={entry_id}, type={error_type}, detail={e}")
+        logger.warning(
+            f"[Download] HTTP error: entry_id={entry_id}, type={error_type}, detail={e}"
+        )
         if _should_try_ezproxy(e, pdf_url, paper, ezproxy_settings):
             try:
                 _download_via_ezproxy(
@@ -194,14 +212,18 @@ def download_paper_task(self, entry_id: int) -> dict:
                     "file_path": stored_path,
                 }
             except Exception as ez_err:
-                logger.warning(f"[Download] EZProxy fallback failed: entry_id={entry_id}, reason={ez_err}")
+                logger.warning(
+                    f"[Download] EZProxy fallback failed: entry_id={entry_id}, reason={ez_err}"
+                )
         try:
             # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
             if self.request.retries >= self.max_retries:
                 entry.download_status = DownloadStatus.FAILED
                 entry.error_message = f"HTTP hatası ({error_type}): {str(e)[:200]}"
                 db.commit()
-                logger.error(f"[Download] Max retries reached, marked FAILED: entry_id={entry_id}")
+                logger.error(
+                    f"[Download] Max retries reached, marked FAILED: entry_id={entry_id}"
+                )
                 return {
                     "status": "failed",
                     "entry_id": entry_id,
@@ -214,7 +236,9 @@ def download_paper_task(self, entry_id: int) -> dict:
                 f"[Download] Marked pending for retry: entry_id={entry_id}, next_attempt={self.request.retries + 2}"
             )
         except Exception as mark_err:
-            logger.error(f"[Download] Could not update status after HTTP error: {mark_err}")
+            logger.error(
+                f"[Download] Could not update status after HTTP error: {mark_err}"
+            )
 
         # Celery otomatik retry yapacak
         raise
@@ -230,7 +254,9 @@ def download_paper_task(self, entry_id: int) -> dict:
     except Exception as e:
         # Beklenmeyen hata
         error_type = type(e).__name__
-        logger.error(f"[Download] Unexpected error: entry_id={entry_id}, type={error_type}, detail={e}")
+        logger.error(
+            f"[Download] Unexpected error: entry_id={entry_id}, type={error_type}, detail={e}"
+        )
         try:
             entry.download_status = DownloadStatus.FAILED
             entry.error_message = f"Beklenmeyen hata ({error_type}): {str(e)[:200]}"
@@ -280,7 +306,9 @@ def retry_stuck_downloads(self) -> dict:
             # Durumu pending'e çevir
             entry.download_status = DownloadStatus.PENDING
             retried_ids.append(entry.id)
-            logger.info(f"[RetryStuck] Resetting entry_id={entry.id}, paper_id={entry.paper_id}")
+            logger.info(
+                f"[RetryStuck] Resetting entry_id={entry.id}, paper_id={entry.paper_id}"
+            )
 
         db.commit()
 
@@ -290,7 +318,11 @@ def retry_stuck_downloads(self) -> dict:
             logger.info(f"[RetryStuck] Re-queued entry_id={entry_id}")
 
         logger.info(f"[RetryStuck] Retried {len(retried_ids)} stuck downloads")
-        return {"status": "ok", "retried_count": len(retried_ids), "entry_ids": retried_ids}
+        return {
+            "status": "ok",
+            "retried_count": len(retried_ids),
+            "entry_ids": retried_ids,
+        }
 
     except Exception as e:
         logger.error(f"[RetryStuck] Error: {type(e).__name__} - {e}")
@@ -331,7 +363,9 @@ def retry_all_incomplete_downloads(self) -> dict:
         for entry in entries:
             entry.download_status = DownloadStatus.PENDING
             retried_ids.append(entry.id)
-            logger.info(f"[RetryAll] Resetting entry_id={entry.id}, paper_id={entry.paper_id}")
+            logger.info(
+                f"[RetryAll] Resetting entry_id={entry.id}, paper_id={entry.paper_id}"
+            )
 
         db.commit()
 
@@ -340,7 +374,11 @@ def retry_all_incomplete_downloads(self) -> dict:
             logger.info(f"[RetryAll] Re-queued entry_id={entry_id}")
 
         logger.info(f"[RetryAll] Retried {len(retried_ids)} incomplete downloads")
-        return {"status": "ok", "retried_count": len(retried_ids), "entry_ids": retried_ids}
+        return {
+            "status": "ok",
+            "retried_count": len(retried_ids),
+            "entry_ids": retried_ids,
+        }
 
     except Exception as e:
         logger.error(f"[RetryAll] Error: {type(e).__name__} - {e}")
@@ -373,7 +411,9 @@ def _find_pdf_url(paper) -> str | None:
 def _resolve_runtime_proxy_url(db: Session, fallback_proxy: str | None) -> str | None:
     """DB'deki UserSettings'e gore guncel proxy URL'i belirler."""
     try:
-        row = db.execute(select(UserSettings).order_by(UserSettings.id.asc())).scalar_one_or_none()
+        row = db.execute(
+            select(UserSettings).order_by(UserSettings.id.asc())
+        ).scalar_one_or_none()
     except Exception as exc:
         logger.warning(f"[Download] Could not read user_settings for proxy: {exc}")
         return fallback_proxy
@@ -390,7 +430,9 @@ def _resolve_runtime_proxy_url(db: Session, fallback_proxy: str | None) -> str |
 def _load_ezproxy_settings(db: Session) -> dict | None:
     """DB'den EZProxy ayarlarını çeker."""
     try:
-        row = db.execute(select(UserSettings).order_by(UserSettings.id.asc())).scalar_one_or_none()
+        row = db.execute(
+            select(UserSettings).order_by(UserSettings.id.asc())
+        ).scalar_one_or_none()
     except Exception as exc:
         logger.warning(f"[Download] Could not read user_settings for ezproxy: {exc}")
         return None
@@ -443,11 +485,17 @@ def _download_file(
                     f.write(chunk)
 
 
-def _should_try_ezproxy(error: Exception, pdf_url: str | None, paper, ezproxy_settings: dict | None) -> bool:
+def _should_try_ezproxy(
+    error: Exception, pdf_url: str | None, paper, ezproxy_settings: dict | None
+) -> bool:
     """EZProxy fallback şartlarını kontrol eder."""
     if not ezproxy_settings:
         return False
-    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code not in (401, 402, 403):
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code not in (
+        401,
+        402,
+        403,
+    ):
         return False
     if not pdf_url and not paper.doi:
         return False
@@ -474,6 +522,8 @@ def _download_via_ezproxy(
     entry_id: int | None,
 ) -> None:
     target = _build_ezproxy_target(ezproxy_settings["prefix"], original_pdf_url, paper)
-    logger.info(f"[Download] EZProxy fallback attempted: entry_id={entry_id}, target={target[:120]}")
+    logger.info(
+        f"[Download] EZProxy fallback attempted: entry_id={entry_id}, target={target[:120]}"
+    )
     headers = {"Cookie": ezproxy_settings["cookie"]}
     _download_file(target, file_path, proxy_url, entry_id, headers_override=headers)

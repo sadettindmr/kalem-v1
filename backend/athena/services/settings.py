@@ -28,7 +28,9 @@ class UserSettingsService:
 
     async def get_settings(self) -> UserSettings:
         """Ayar kaydini getirir; yoksa .env degerlerinden olusturur."""
-        result = await self.db.execute(select(UserSettings).order_by(UserSettings.id.asc()))
+        result = await self.db.execute(
+            select(UserSettings).order_by(UserSettings.id.asc())
+        )
         settings_row = result.scalars().first()
         if settings_row:
             return settings_row
@@ -68,7 +70,9 @@ class UserSettingsService:
         if data.openalex_email is not None:
             settings_row.openalex_email = data.openalex_email.strip() or None
         if data.enabled_providers is not None:
-            settings_row.enabled_providers = self._normalize_providers(data.enabled_providers)
+            settings_row.enabled_providers = self._normalize_providers(
+                data.enabled_providers
+            )
         if data.proxy_url is not None:
             settings_row.proxy_url = data.proxy_url.strip() or None
         if data.proxy_enabled is not None:

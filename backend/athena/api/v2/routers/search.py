@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from athena.core.database import get_db
 from athena.schemas.search import SearchFilters, SearchResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from athena.services.search import SearchService
 
 router = APIRouter(prefix="/search", tags=["Search"])

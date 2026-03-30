@@ -12,12 +12,34 @@ class UserSettingsResponse(BaseModel):
     """Kullanıcı ayarları yanıtı (API anahtarları maskelenmiş)."""
 
     id: int = Field(..., description="Ayar kaydı ID", examples=[1])
-    openai_api_key: str | None = Field(default=None, description="OpenAI API anahtarı (maskelenmiş)", examples=["sk-***"])
-    semantic_scholar_api_key: str | None = Field(default=None, description="Semantic Scholar API anahtarı (maskelenmiş)", examples=["***"])
-    core_api_key: str | None = Field(default=None, description="CORE API anahtarı (maskelenmiş)", examples=["***"])
-    openalex_email: str | None = Field(default=None, description="OpenAlex için iletişim e-postası", examples=["researcher@university.edu"])
-    enabled_providers: list[str] = Field(..., description="Aktif arama sağlayıcıları", examples=[["semantic", "openalex", "arxiv", "crossref", "core"]])
-    proxy_url: str | None = Field(default=None, description="Proxy sunucu URL'si", examples=["http://proxy.university.edu:8080"])
+    openai_api_key: str | None = Field(
+        default=None,
+        description="OpenAI API anahtarı (maskelenmiş)",
+        examples=["sk-***"],
+    )
+    semantic_scholar_api_key: str | None = Field(
+        default=None,
+        description="Semantic Scholar API anahtarı (maskelenmiş)",
+        examples=["***"],
+    )
+    core_api_key: str | None = Field(
+        default=None, description="CORE API anahtarı (maskelenmiş)", examples=["***"]
+    )
+    openalex_email: str | None = Field(
+        default=None,
+        description="OpenAlex için iletişim e-postası",
+        examples=["researcher@university.edu"],
+    )
+    enabled_providers: list[str] = Field(
+        ...,
+        description="Aktif arama sağlayıcıları",
+        examples=[["semantic", "openalex", "arxiv", "crossref", "core"]],
+    )
+    proxy_url: str | None = Field(
+        default=None,
+        description="Proxy sunucu URL'si",
+        examples=["http://proxy.university.edu:8080"],
+    )
     proxy_enabled: bool = Field(..., description="Proxy aktif mi", examples=[False])
     ezproxy_prefix: str | None = Field(
         default=None,
@@ -34,13 +56,33 @@ class UserSettingsResponse(BaseModel):
 class UserSettingsUpdateRequest(BaseModel):
     """Kullanıcı ayarları güncelleme isteği (kısmi güncelleme destekli)."""
 
-    openai_api_key: SecretStr | None = Field(default=None, description="OpenAI API anahtarı")
-    semantic_scholar_api_key: SecretStr | None = Field(default=None, description="Semantic Scholar API anahtarı")
-    core_api_key: SecretStr | None = Field(default=None, description="CORE API anahtarı")
-    openalex_email: str | None = Field(default=None, description="OpenAlex iletişim e-postası", examples=["researcher@university.edu"])
-    enabled_providers: list[str] | None = Field(default=None, description="Aktif sağlayıcı listesi", examples=[["semantic", "openalex", "arxiv"]])
-    proxy_url: str | None = Field(default=None, description="Proxy sunucu URL'si", examples=["http://proxy.university.edu:8080"])
-    proxy_enabled: bool | None = Field(default=None, description="Proxy aktif/pasif", examples=[True])
+    openai_api_key: SecretStr | None = Field(
+        default=None, description="OpenAI API anahtarı"
+    )
+    semantic_scholar_api_key: SecretStr | None = Field(
+        default=None, description="Semantic Scholar API anahtarı"
+    )
+    core_api_key: SecretStr | None = Field(
+        default=None, description="CORE API anahtarı"
+    )
+    openalex_email: str | None = Field(
+        default=None,
+        description="OpenAlex iletişim e-postası",
+        examples=["researcher@university.edu"],
+    )
+    enabled_providers: list[str] | None = Field(
+        default=None,
+        description="Aktif sağlayıcı listesi",
+        examples=[["semantic", "openalex", "arxiv"]],
+    )
+    proxy_url: str | None = Field(
+        default=None,
+        description="Proxy sunucu URL'si",
+        examples=["http://proxy.university.edu:8080"],
+    )
+    proxy_enabled: bool | None = Field(
+        default=None, description="Proxy aktif/pasif", examples=[True]
+    )
     ezproxy_prefix: str | None = Field(
         default=None,
         description="EZProxy giriş URL öneki",
