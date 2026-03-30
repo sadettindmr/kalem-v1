@@ -1,5 +1,23 @@
 # Release Notes
 
+## v1.1.3 (2026-03-30)
+
+### Added
+- Swagger UI / ReDoc dokümantasyonu zenginleştirildi (metadata, tag grupları, örnekler).
+- API şemalarında kapsamlı örnek veri ve açıklamalar eklendi.
+
+### Fixed
+- Docker Compose’da `DEBUG` ortam değişkeni artık her ortamda geçerli boolean olacak şekilde sabitlendi.
+- Kütüphane sayfası için sayfalama (pagination) eklendi.
+
+### Technical Notes
+- Backend:
+  - OpenAPI metadata ve tag açıklamaları detaylandırıldı.
+  - Router endpoint summary/response_description/docstring eklendi.
+  - Schema alanlarında `Field` description/example iyileştirildi.
+- Docker:
+  - `DEBUG=false` ile backend startup hatası giderildi.
+
 ## v1.0.2 (2026-02-15)
 
 ### Fixed

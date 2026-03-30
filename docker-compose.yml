@@ -57,7 +57,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-kalem}:${POSTGRES_PASSWORD:-kalem}@postgres_db:5432/${POSTGRES_DB:-kalem}
       - REDIS_URL=redis://redis_cache:6379/0
       - RABBITMQ_URL=amqp://${RABBITMQ_DEFAULT_USER:-kalem}:${RABBITMQ_DEFAULT_PASS:-kalem}@rabbitmq_broker:5672/
-      - DEBUG=${DEBUG:-False}
+      - DEBUG=false
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
       - OPENALEX_EMAIL=${OPENALEX_EMAIL:-kalem.kasghar@example.com}
