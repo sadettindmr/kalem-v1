@@ -62,9 +62,9 @@ These rules are **non-negotiable** (see `docs/ai/conventions.md` for details):
 
 ## 📊 Current Sprint Status
 
-**Active Sprints:** Sprint 12 (Advanced Export) + Sprint 13 (Configuration Center)
+**Active Sprints:** Sprint 16 (API Documentation) + Sprint 15 (Collections) + Sprint 14 (QA/CI)
 
-**Status:** ⏳ Implementation complete, manual testing pending
+**Status:** ✅ Sprint 12-16 completed
 
 **Details:** See `docs/ai/tasks.md` for full checklist
 

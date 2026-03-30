@@ -103,33 +103,36 @@ def _apply_library_filters(
 class IngestRequest(BaseModel):
     """Kütüphaneye makale ekleme isteği."""
 
-    paper: PaperResponse
+    paper: PaperResponse = Field(..., description="Eklenecek makale verisi")
     search_query: str = Field(
         default="",
-        description="Arama terimi (etiketleme için, virgülle ayrılmış)",
+        description="Arama terimi (virgülle ayrılarak etiket olarak kaydedilir)",
+        examples=["machine learning, deep learning"],
     )
 
 
 class IngestResponse(BaseModel):
     """Kütüphaneye makale ekleme yanıtı."""
 
-    status: str
-    entry_id: int
+    status: str = Field(..., description="İşlem durumu (queued veya saved)", examples=["queued"])
+    entry_id: int = Field(..., description="Oluşturulan library entry ID", examples=[42])
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post(
+    "/ingest",
+    response_model=IngestResponse,
+    summary="Makaleyi Kütüphaneye Ekle",
+    response_description="Eklenen makalenin entry ID'si ve işlem durumu",
+)
 async def ingest_paper(
     request: IngestRequest,
     db: AsyncSession = Depends(get_db),
 ) -> IngestResponse:
-    """Makaleyi kütüphaneye ekler ve PDF indirme görevini başlatır.
+    """Arama sonuçlarından bir makaleyi kütüphaneye kaydeder ve PDF indirme görevini başlatır.
 
-    Args:
-        request: Makale verisi ve arama terimi
-        db: Veritabanı oturumu
-
-    Returns:
-        İşlem durumu ve entry_id
+    - Makale DOI veya başlık bazında tekilleştirilerek veritabanına eklenir.
+    - `search_query` alanı virgülle ayrılarak otomatik etiketleme yapılır.
+    - PDF indirme görevi Celery kuyruğuna eklenir (broker hatası durumunda makale yine kaydedilir).
     """
     # 1. LibraryService ile makaleyi kaydet
     service = LibraryService(db)
@@ -151,51 +154,89 @@ async def ingest_paper(
 
 
 class BulkIngestRequest(BaseModel):
-    """Toplu kutuphanye ekleme istegi."""
+    """Toplu kütüphaneye ekleme isteği."""
 
-    papers: list[PaperResponse] = Field(..., min_length=1, max_length=100)
-    search_query: str = Field(default="")
+    papers: list[PaperResponse] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Eklenecek makale listesi (maks. 100)",
+    )
+    search_query: str = Field(
+        default="",
+        description="Arama terimi (etiketleme için)",
+        examples=["neural networks"],
+    )
 
 
 class BulkIngestResponse(BaseModel):
-    """Toplu ekleme yaniti."""
+    """Toplu ekleme yanıtı."""
 
-    status: str
-    added_count: int
-    duplicate_count: int = 0
-    failed_count: int = 0
-    entry_ids: list[int]
+    status: str = Field(..., description="İşlem durumu", examples=["queued"])
+    added_count: int = Field(..., description="Yeni eklenen makale sayısı", examples=[5])
+    duplicate_count: int = Field(default=0, description="Zaten kayıtlı mükerrer sayısı", examples=[2])
+    failed_count: int = Field(default=0, description="Başarısız ekleme sayısı", examples=[0])
+    entry_ids: list[int] = Field(..., description="Eklenen makalelerin entry ID listesi", examples=[[10, 11, 12, 13, 14]])
 
 
 class CheckLibraryRequest(BaseModel):
-    """Kutuphanede kayitli makale kontrolu istegi."""
+    """Kütüphanede kayıtlı makale kontrolü isteği."""
 
-    external_ids: list[str] = Field(..., min_length=1, max_length=5000)
+    external_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Kontrol edilecek external ID (DOI) listesi",
+        examples=[["10.1038/s41586-021-03819-2", "10.48550/arXiv.1706.03762"]],
+    )
 
 
 class CheckLibraryResponse(BaseModel):
-    """Kutuphanede kayitli makale kontrolu yaniti."""
+    """Kütüphanede kayıtlı makale kontrolü yanıtı."""
 
-    saved_ids: list[str]
+    saved_ids: list[str] = Field(
+        ...,
+        description="Kütüphanede bulunan external ID listesi",
+        examples=[["10.1038/s41586-021-03819-2"]],
+    )
 
 
-@router.post("/check", response_model=CheckLibraryResponse)
+@router.post(
+    "/check",
+    response_model=CheckLibraryResponse,
+    summary="Kütüphane Kayıt Kontrolü",
+    response_description="Kütüphanede bulunan external ID'lerin listesi",
+)
 async def check_library_papers(
     request: CheckLibraryRequest,
     db: AsyncSession = Depends(get_db),
 ) -> CheckLibraryResponse:
-    """Verilen external_id'lerin kutuphanede kayitli olup olmadigini kontrol eder."""
+    """Verilen external ID listesinin kütüphanede kayıtlı olup olmadığını toplu kontrol eder.
+
+    Frontend'de arama sonuçlarındaki \"zaten kayıtlı\" durumunu göstermek için kullanılır.
+    """
     service = LibraryService(db)
     saved_ids = await service.get_saved_external_ids(request.external_ids)
     return CheckLibraryResponse(saved_ids=list(saved_ids))
 
 
-@router.post("/ingest/bulk", response_model=BulkIngestResponse)
+@router.post(
+    "/ingest/bulk",
+    response_model=BulkIngestResponse,
+    summary="Toplu Makale Ekleme",
+    response_description="Eklenen, mükerrer ve başarısız makale sayıları",
+)
 async def bulk_ingest_papers(
     request: BulkIngestRequest,
     db: AsyncSession = Depends(get_db),
 ) -> BulkIngestResponse:
-    """Birden fazla makaleyi toplu olarak kutuphanye ekler."""
+    """Birden fazla makaleyi tek seferde kütüphaneye ekler.
+
+    - Maksimum 100 makale gönderilebilir.
+    - Her makale için tekilleştirme kontrolü yapılır.
+    - Mükerrer makaleler atlanır, başarısız olanlar sayılır.
+    - Başarılı eklemeler için PDF indirme görevleri kuyruğa eklenir.
+    """
     service = LibraryService(db)
     entry_ids: list[int] = []
     duplicate_count = 0
@@ -228,7 +269,12 @@ async def bulk_ingest_papers(
     )
 
 
-@router.get("", response_model=LibraryListResponse)
+@router.get(
+    "",
+    response_model=LibraryListResponse,
+    summary="Kütüphane Listesi",
+    response_description="Sayfalanmış makale listesi ve toplam kayıt sayısı",
+)
 async def list_library(
     page: int = Query(default=1, ge=1, description="Sayfa numarası"),
     limit: int = Query(default=20, ge=1, le=100, description="Sayfa başına öğe sayısı"),
@@ -241,7 +287,16 @@ async def list_library(
     collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> LibraryListResponse:
-    """Kütüphanedeki makaleleri listeler."""
+    """Kütüphanedeki makaleleri filtreli ve sayfalanmış olarak listeler.
+
+    **Desteklenen Filtreler:**
+    - `tag`: Etikete göre filtreleme
+    - `status`: İndirme durumu (pending, downloading, completed, failed)
+    - `min_citations`: Minimum atıf sayısı eşiği
+    - `year_start` / `year_end`: Yayın yılı aralığı
+    - `search`: PostgreSQL FTS ile başlık/özet/yazar/etiket araması
+    - `collection_id`: Belirli bir koleksiyondaki makaleler
+    """
     service = LibraryService(db)
     entries, total = await service.get_library_entries(
         page=page,
@@ -317,7 +372,11 @@ async def list_library(
     )
 
 
-@router.get("/download-zip")
+@router.get(
+    "/download-zip",
+    summary="PDF Arşivi İndir (ZIP)",
+    response_description="Filtrelenmiş PDF dosyalarını içeren ZIP arşivi",
+)
 async def download_zip_archive(
     tag: Optional[str] = Query(default=None, description="Etikete gore filtrele"),
     status: Optional[str] = Query(default=None, description="Indirme durumuna gore filtrele"),
@@ -328,7 +387,11 @@ async def download_zip_archive(
     collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Filtrelenmis ve indirilmeye hazir PDF dosyalarini ZIP olarak dondurur."""
+    """Filtrelenmiş ve indirilmeye hazır PDF dosyalarını ZIP arşivi olarak döndürür.
+
+    Yalnızca `download_status=completed` olan ve fiziksel dosyası mevcut olan makaleler dahil edilir.
+    Kütüphane listeleme ile aynı filtre parametrelerini destekler.
+    """
     query = select(LibraryEntry).options(
         joinedload(LibraryEntry.paper),
         joinedload(LibraryEntry.tags),
@@ -384,21 +447,27 @@ async def download_zip_archive(
 class RetryDownloadsResponse(BaseModel):
     """İndirmeleri tekrar deneme yanıtı."""
 
-    status: str
-    message: str
+    status: str = Field(..., description="İşlem durumu (queued veya error)", examples=["queued"])
+    message: str = Field(..., description="Sonuç mesajı", examples=["Takili kalan indirmeler tekrar kuyruga eklendi"])
 
 
-@router.post("/retry-downloads", response_model=RetryDownloadsResponse)
+@router.post(
+    "/retry-downloads",
+    response_model=RetryDownloadsResponse,
+    summary="İndirmeleri Tekrar Dene",
+    response_description="Kuyruğa ekleme durumu ve mesajı",
+)
 async def retry_downloads(
     scope: Literal["stuck", "all"] = Query(
         default="stuck",
         description="Retry kapsami: stuck (1 saatten eski pending/downloading) veya all (tum incomplete)",
     ),
 ) -> RetryDownloadsResponse:
-    """Indirmeleri tekrar kuyruga ekler.
+    """Tamamlanamamış PDF indirmelerini tekrar Celery kuyruğuna ekler.
 
-    - scope=stuck: 1 saatten eski pending/downloading kayitlari tekrar dener
-    - scope=all: pending/downloading/failed tum kayitlari tekrar dener
+    **Kapsam Seçenekleri:**
+    - `stuck`: 1 saatten eski pending/downloading kayıtları tekrar dener
+    - `all`: pending, downloading ve failed tüm kayıtları tekrar dener
     """
     try:
         if scope == "all":
@@ -423,34 +492,42 @@ async def retry_downloads(
 
 
 class DownloadStatsResponse(BaseModel):
-    """Indirme istatistikleri yaniti."""
+    """İndirme istatistikleri yanıtı."""
 
-    pending: int = 0
-    downloading: int = 0
-    completed: int = 0
-    failed: int = 0
-    total: int = 0
-    failed_entries: list[dict] = []
+    pending: int = Field(default=0, description="Bekleyen indirme sayısı", examples=[3])
+    downloading: int = Field(default=0, description="Devam eden indirme sayısı", examples=[1])
+    completed: int = Field(default=0, description="Tamamlanan indirme sayısı", examples=[120])
+    failed: int = Field(default=0, description="Başarısız indirme sayısı", examples=[5])
+    total: int = Field(default=0, description="Toplam kayıt sayısı", examples=[129])
+    failed_entries: list[dict] = Field(default_factory=list, description="Başarısız kayıtların detayları")
 
 
 class EnrichMetadataResponse(BaseModel):
-    """Eksik metadata tamamlama yaniti."""
+    """Eksik metadata tamamlama yanıtı."""
 
-    status: str
-    message: str
-    processed: int = 0
-    updated: int = 0
-    skipped: int = 0
-    failed: int = 0
-    details: list[dict] = []
+    status: str = Field(..., description="İşlem durumu", examples=["completed"])
+    message: str = Field(..., description="Sonuç mesajı", examples=["Eksik metadata tamamlama islemi tamamlandi"])
+    processed: int = Field(default=0, description="İşlenen kayıt sayısı", examples=[20])
+    updated: int = Field(default=0, description="Güncellenen kayıt sayısı", examples=[15])
+    skipped: int = Field(default=0, description="Atlanan kayıt sayısı", examples=[3])
+    failed: int = Field(default=0, description="Başarısız kayıt sayısı", examples=[2])
+    details: list[dict] = Field(default_factory=list, description="Kayıt bazlı işlem detayları")
 
 
-@router.post("/enrich-metadata", response_model=EnrichMetadataResponse)
+@router.post(
+    "/enrich-metadata",
+    response_model=EnrichMetadataResponse,
+    summary="Eksik Metadata Tamamlama",
+    response_description="İşlenen, güncellenen, atlanan ve başarısız kayıt sayıları",
+)
 async def enrich_metadata(
     limit: int = Query(default=20, ge=1, le=100, description="Maksimum islenecek kayit"),
     db: AsyncSession = Depends(get_db),
 ) -> EnrichMetadataResponse:
-    """Kutuphanedeki eksik metadata alanlarini dis kaynaklarla tamamlar."""
+    """Kütüphanedeki eksik metadata alanlarını (yıl, atıf, özet vb.) dış kaynaklardan tamamlar.
+
+    DOI veya başlık kullanarak Crossref ve OpenAlex'ten güncel bilgileri çeker.
+    """
     service = LibraryService(db)
     result = await service.enrich_missing_metadata(limit=limit)
 
@@ -465,13 +542,19 @@ async def enrich_metadata(
     )
 
 
-@router.get("/download-stats", response_model=DownloadStatsResponse)
+@router.get(
+    "/download-stats",
+    response_model=DownloadStatsResponse,
+    summary="İndirme İstatistikleri",
+    response_description="Durum bazlı indirme sayıları ve başarısız kayıt detayları",
+)
 async def download_stats(
     db: AsyncSession = Depends(get_db),
 ) -> DownloadStatsResponse:
-    """Indirme durumu istatistiklerini dondurur.
+    """PDF indirme durumu istatistiklerini döndürür.
 
-    Her durum icin sayi + basarisiz kayitlarin detaylarini verir.
+    Her durum (pending, downloading, completed, failed) için sayım yapar.
+    Başarısız kayıtların detaylarını (id, başlık, son güncelleme) içerir.
     """
     # Status bazli sayimlar
     count_query = (
@@ -519,7 +602,11 @@ async def download_stats(
     )
 
 
-@router.get("/export")
+@router.get(
+    "/export",
+    summary="Kütüphane Dışa Aktarma",
+    response_description="CSV veya XLSX formatında bibliyografik veri dosyası",
+)
 async def export_library(
     format: Literal["csv", "xlsx"] = Query(
         default="xlsx",
@@ -532,7 +619,12 @@ async def export_library(
     collection_id: Optional[int] = Query(default=None, description="Koleksiyon ID filtresi"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Kütüphane verilerini CSV veya XLSX formatında dışa aktarır."""
+    """Kütüphane verilerini CSV veya XLSX formatında dışa aktarır.
+
+    **XLSX formatı 14 sütun içerir:**
+    Başlık, Yazarlar, Yıl, Tür, Dergi, DOI, Anahtar Kelimeler,
+    Arama Terimleri, APA Atıf, IEEE Atıf, Atıf Tarihi, Kaynak, İndirildi, Kod/Veri Erişimi.
+    """
     service = ExportService(db)
     buffer, content_type, filename = await service.export_library(
         format=format,

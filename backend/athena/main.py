@@ -18,11 +18,49 @@ from athena.core.middleware import RequestLoggingMiddleware
 setup_logging()
 
 app = FastAPI(
-    title="Kalem - Kasghar",
-    description="Modular Monolith Backend API",
-    version="1.1.1",
+    title="Kalem API - Kasghar Release",
+    description=(
+        "Akademik literatür tarama, kütüphane yönetimi ve PDF arşivleme sistemi API'si.\n\n"
+        "## Özellikler\n\n"
+        "- **Arama**: Semantic Scholar, OpenAlex, arXiv, Crossref ve CORE üzerinden paralel akademik makale araması\n"
+        "- **Kütüphane**: Makale kaydetme, etiketleme, PDF indirme ve arşivleme\n"
+        "- **Koleksiyonlar**: Makaleleri projelere organize etme (çoklu atama destekli)\n"
+        "- **Dışa Aktarma**: Excel (XLSX) ve CSV formatlarında bibliyografik veri aktarımı\n"
+        "- **Ayarlar**: API anahtarları, sağlayıcı kontrolü ve proxy yapılandırması\n"
+    ),
+    version="1.0.0",
+    contact={
+        "name": "Kalem Core Team",
+        "url": "https://github.com/sadettindmr/kalem-v1",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_tags=[
+        {
+            "name": "Search",
+            "description": "Akademik makale arama işlemleri. Birden fazla kaynaktan paralel arama, sonuç birleştirme ve tekilleştirme.",
+        },
+        {
+            "name": "Library",
+            "description": "Kütüphane yönetimi. Makale ekleme, listeleme, filtreleme, PDF indirme ve dışa aktarma.",
+        },
+        {
+            "name": "Collections",
+            "description": "Proje/koleksiyon yönetimi. Makaleleri projelere atama ve organize etme.",
+        },
+        {
+            "name": "Settings",
+            "description": "Kullanıcı ayarları. API anahtarları, sağlayıcı kontrolü ve proxy yapılandırması.",
+        },
+        {
+            "name": "System",
+            "description": "Sistem işlemleri. Sağlık kontrolü ve fabrika ayarlarına sıfırlama.",
+        },
+    ],
 )
 
 # Request Logging Middleware (CORS'tan önce eklenmeli)
@@ -248,7 +286,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 async def root():
     """Root endpoint."""
     return {
-        "message": "Kalem - Kasghar API",
-        "version": "1.1.1",
+        "message": "Kalem API - Kasghar Release",
+        "version": "1.0.0",
         "docs": "/docs",
     }

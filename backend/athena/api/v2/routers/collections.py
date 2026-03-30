@@ -17,62 +17,122 @@ from athena.models.library import LibraryEntry
 router = APIRouter(prefix="/collections", tags=["Collections"])
 
 
+# ==================== Tag Metadata ====================
+
+TAG_METADATA = {
+    "summary_list": "Koleksiyon Listesi",
+    "summary_create": "Yeni Koleksiyon Oluştur",
+    "summary_delete": "Koleksiyon Sil",
+    "summary_sync": "Koleksiyon İçeriğini Senkronize Et",
+    "summary_add": "Koleksiyona Makale Ekle",
+    "summary_by_entry": "Makalenin Koleksiyonlarını Getir",
+}
+
+
 # ==================== Schemas ====================
 
 
 class CollectionCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=1000)
+    """Koleksiyon oluşturma isteği."""
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Koleksiyon adı (benzersiz olmalı)",
+        examples=["Tez Literatürü"],
+    )
+    description: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description="Koleksiyon açıklaması",
+        examples=["Yüksek lisans tezi için toplanan makaleler"],
+    )
 
 
 class CollectionSchema(BaseModel):
-    id: int
-    name: str
-    description: Optional[str] = None
-    created_at: str
-    entry_count: int = 0
+    """Koleksiyon detay DTO'su."""
+
+    id: int = Field(..., description="Koleksiyon ID", examples=[1])
+    name: str = Field(..., description="Koleksiyon adı", examples=["Tez Literatürü"])
+    description: Optional[str] = Field(
+        default=None,
+        description="Koleksiyon açıklaması",
+    )
+    created_at: str = Field(..., description="Oluşturulma tarihi (ISO 8601)", examples=["2024-01-15T10:30:00"])
+    entry_count: int = Field(default=0, description="Koleksiyondaki makale sayısı", examples=[24])
 
     model_config = {"from_attributes": True}
 
 
 class CollectionListResponse(BaseModel):
-    items: list[CollectionSchema]
+    """Koleksiyon listeleme yanıtı."""
+
+    items: list[CollectionSchema] = Field(..., description="Koleksiyon listesi")
 
 
 class SyncEntriesRequest(BaseModel):
-    """Koleksiyona eklenecek entry ID listesi. Mevcut icerik bu listeyle senkronize edilir."""
-    entry_ids: list[int] = Field(default_factory=list)
+    """Koleksiyon içerik senkronizasyon isteği. Mevcut içerik bu listeyle değiştirilir."""
+
+    entry_ids: list[int] = Field(
+        default_factory=list,
+        description="Koleksiyonun yeni içeriğini oluşturacak entry ID listesi",
+        examples=[[1, 5, 12, 23]],
+    )
 
 
 class SyncEntriesResponse(BaseModel):
-    status: str
-    added: int = 0
-    removed: int = 0
+    """Senkronizasyon yanıtı."""
+
+    status: str = Field(..., description="İşlem durumu", examples=["synced"])
+    added: int = Field(default=0, description="Eklenen makale sayısı", examples=[3])
+    removed: int = Field(default=0, description="Çıkarılan makale sayısı", examples=[1])
 
 
 class AddEntriesRequest(BaseModel):
-    """Koleksiyona eklenecek entry ID listesi. Mevcut icerik korunur, sadece yeniler eklenir."""
-    entry_ids: list[int] = Field(default_factory=list)
+    """Koleksiyona makale ekleme isteği. Mevcut içerik korunur."""
+
+    entry_ids: list[int] = Field(
+        default_factory=list,
+        description="Eklenecek entry ID listesi",
+        examples=[[10, 11, 12]],
+    )
 
 
 class AddEntriesResponse(BaseModel):
-    status: str
-    added: int = 0
-    already_exists: int = 0
+    """Ekleme yanıtı."""
+
+    status: str = Field(..., description="İşlem durumu", examples=["added"])
+    added: int = Field(default=0, description="Yeni eklenen makale sayısı", examples=[2])
+    already_exists: int = Field(default=0, description="Zaten mevcut olan makale sayısı", examples=[1])
 
 
 class EntryCollectionsResponse(BaseModel):
-    collection_ids: list[int]
+    """Makalenin koleksiyon üyelikleri yanıtı."""
+
+    collection_ids: list[int] = Field(
+        ...,
+        description="Makalenin ait olduğu koleksiyon ID listesi",
+        examples=[[1, 3]],
+    )
 
 
 # ==================== Endpoints ====================
 
 
-@router.get("", response_model=CollectionListResponse)
+@router.get(
+    "",
+    response_model=CollectionListResponse,
+    summary=TAG_METADATA["summary_list"],
+    response_description="Tüm koleksiyonlar ve makale sayıları",
+)
 async def list_collections(
     db: AsyncSession = Depends(get_db),
 ) -> CollectionListResponse:
-    """Tum koleksiyonlari listeler."""
+    """Sistemdeki tüm koleksiyonları (projeleri) listeler.
+
+    Her koleksiyon için içerdiği makale sayısı (`entry_count`) hesaplanarak döndürülür.
+    """
     query = select(Collection).order_by(Collection.name)
     result = await db.execute(query)
     collections = result.scalars().all()
@@ -102,12 +162,20 @@ async def list_collections(
     return CollectionListResponse(items=items)
 
 
-@router.post("", response_model=CollectionSchema)
+@router.post(
+    "",
+    response_model=CollectionSchema,
+    summary=TAG_METADATA["summary_create"],
+    response_description="Oluşturulan koleksiyonun detayları",
+)
 async def create_collection(
     data: CollectionCreate,
     db: AsyncSession = Depends(get_db),
 ) -> CollectionSchema:
-    """Yeni koleksiyon olusturur."""
+    """Yeni bir koleksiyon (proje) oluşturur.
+
+    Aynı isimde koleksiyon varsa **409 Conflict** hatası döner.
+    """
     # Ayni isimde koleksiyon var mi kontrol et
     existing = await db.execute(
         select(Collection).where(Collection.name == data.name)
@@ -131,12 +199,19 @@ async def create_collection(
     )
 
 
-@router.delete("/{collection_id}")
+@router.delete(
+    "/{collection_id}",
+    summary=TAG_METADATA["summary_delete"],
+    response_description="Silme onay mesajı",
+)
 async def delete_collection(
     collection_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Koleksiyonu siler (makaleler silinmez, sadece iliskiler kalkar)."""
+    """Belirtilen koleksiyonu siler.
+
+    Koleksiyondaki makaleler **silinmez**, yalnızca koleksiyon ilişkileri kaldırılır.
+    """
     collection = await db.get(Collection, collection_id)
     if not collection:
         raise HTTPException(status_code=404, detail="Koleksiyon bulunamadi")
@@ -149,16 +224,22 @@ async def delete_collection(
     return {"status": "deleted", "id": collection_id}
 
 
-@router.post("/{collection_id}/entries", response_model=SyncEntriesResponse)
+@router.post(
+    "/{collection_id}/entries",
+    response_model=SyncEntriesResponse,
+    summary=TAG_METADATA["summary_sync"],
+    response_description="Eklenen ve çıkarılan makale sayıları",
+)
 async def sync_collection_entries(
     collection_id: int,
     data: SyncEntriesRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SyncEntriesResponse:
-    """Koleksiyondaki makale listesini senkronize eder.
+    """Koleksiyonun makale listesini gönderilen ID listesiyle **tam senkronize** eder.
 
-    Gonderilen entry_ids listesi koleksiyonun yeni icerigini belirler.
-    Listede olmayan mevcut iliskiler silinir, yeni olanlar eklenir.
+    - Listede olup koleksiyonda olmayan entry'ler **eklenir**.
+    - Koleksiyonda olup listede olmayan entry'ler **çıkarılır**.
+    - Bu endpoint koleksiyonun tüm içeriğini yeniden tanımlar (replace semantics).
     """
     collection = await db.execute(
         select(Collection)
@@ -204,16 +285,21 @@ async def sync_collection_entries(
     )
 
 
-@router.post("/{collection_id}/entries/add", response_model=AddEntriesResponse)
+@router.post(
+    "/{collection_id}/entries/add",
+    response_model=AddEntriesResponse,
+    summary=TAG_METADATA["summary_add"],
+    response_description="Eklenen ve zaten mevcut olan makale sayıları",
+)
 async def add_entries_to_collection(
     collection_id: int,
     data: AddEntriesRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AddEntriesResponse:
-    """Koleksiyona yeni entry'ler ekler (mevcut icerik korunur).
+    """Koleksiyona yeni makaleler ekler (mevcut içerik korunur).
 
-    Sync endpoint'inden farki: sadece ekleme yapar, cikartma yapmaz.
-    Zaten koleksiyonda olan entry'ler atlanir.
+    Sync endpoint'inden farklı olarak **sadece ekleme** yapar, çıkartma yapmaz.
+    Zaten koleksiyonda olan entry'ler atlanır ve `already_exists` sayısında raporlanır.
     """
     collection = await db.execute(
         select(Collection)
@@ -255,12 +341,20 @@ async def add_entries_to_collection(
     )
 
 
-@router.get("/by-entry/{entry_id}", response_model=EntryCollectionsResponse)
+@router.get(
+    "/by-entry/{entry_id}",
+    response_model=EntryCollectionsResponse,
+    summary=TAG_METADATA["summary_by_entry"],
+    response_description="Makalenin ait olduğu koleksiyon ID listesi",
+)
 async def get_entry_collections(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> EntryCollectionsResponse:
-    """Bir entry'nin hangi koleksiyonlarda oldugunu doner."""
+    """Belirtilen library entry'nin hangi koleksiyonlara ait olduğunu döndürür.
+
+    Frontend'de proje atama dialog'unda mevcut üyelikleri ön-işaretlemek için kullanılır.
+    """
     entry = await db.execute(
         select(LibraryEntry)
         .options(selectinload(LibraryEntry.collections))

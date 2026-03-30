@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy import text
 
@@ -21,16 +21,23 @@ RESET_CONFIRMATION_STRING = "DELETE-ALL-DATA"
 class ResetRequest(BaseModel):
     """Sistem sıfırlama isteği."""
 
-    confirmation: str
+    confirmation: str = Field(
+        ...,
+        description="Onay kodu - 'DELETE-ALL-DATA' yazılmalıdır",
+        examples=["DELETE-ALL-DATA"],
+    )
 
 
-@router.get("/health")
+@router.get(
+    "/health",
+    summary="Sağlık Kontrolü",
+    response_description="Servis durumu, veritabanı ve Redis bağlantı bilgileri",
+)
 async def health_check():
-    """
-    Health check endpoint.
+    """Sistem sağlık kontrolü yapar.
 
-    Checks database and Redis connectivity.
-    Returns 200 if all services are healthy, 503 otherwise.
+    Veritabanı (PostgreSQL) ve Redis bağlantılarını test eder.
+    Tüm servisler sağlıklıysa **200**, aksi halde **503** döner.
     """
     health_status = {
         "status": "healthy",
@@ -65,20 +72,17 @@ async def health_check():
     return health_status
 
 
-@router.post("/system/reset")
+@router.post(
+    "/system/reset",
+    summary="Sistemi Sıfırla (Tehlikeli)",
+    response_description="Silinen dosya sayısı ve işlem durumu",
+)
 async def reset_system(request: ResetRequest):
-    """Sistemi fabrika ayarlarına döndürür.
+    """Sistemi fabrika ayarlarına döndürür. **Bu işlem geri alınamaz!**
 
-    DİKKAT: Bu işlem geri alınamaz! Tüm veriler silinir.
-
-    Args:
-        request: confirmation alanı "DELETE-ALL-DATA" olmalı
-
-    Returns:
-        Silinen dosya sayısı ile başarı mesajı
-
-    Raises:
-        HTTPException 403: Yanlış onay kodu
+    Tüm veritabanı tabloları temizlenir ve indirilen PDF dosyaları silinir.
+    İşlemi onaylamak için `confirmation` alanına `DELETE-ALL-DATA` yazılmalıdır.
+    Yanlış onay kodu gönderilirse **403 Forbidden** döner.
     """
     # 1. Güvenlik kontrolü
     if request.confirmation != RESET_CONFIRMATION_STRING:

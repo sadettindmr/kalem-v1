@@ -8,18 +8,28 @@ from athena.services.search import SearchService
 router = APIRouter(prefix="/search", tags=["Search"])
 
 
-@router.post("", response_model=SearchResponse)
+@router.post(
+    "",
+    response_model=SearchResponse,
+    summary="Akademik Literatür Taraması Yap",
+    response_description="Arama sonuçları ve kaynak istatistikleri",
+)
 async def search_papers(
     filters: SearchFilters,
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
-    """Akademik makale aramasi yapar.
+    """Birden fazla akademik kaynaktan paralel makale araması yapar.
 
-    Semantic Scholar ve OpenAlex API'lerinden paralel arama yapar,
-    sonuclari birlestirir ve tekillestirir.
+    **Desteklenen Kaynaklar:**
+    - Semantic Scholar
+    - OpenAlex
+    - arXiv
+    - Crossref
+    - CORE
 
-    Returns:
-        SearchResponse: results (makale listesi) + meta (ham/dedup istatistikler)
+    Sonuçlar birleştirilir, DOI ve başlık bazında tekilleştirilir,
+    alaka düzeyi düşük sonuçlar filtrelenir.
+    `meta` alanında her kaynaktan gelen ham sayılar ve eleme istatistikleri döner.
     """
     service = SearchService(db)
     return await service.search_papers(filters)
