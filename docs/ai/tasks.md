@@ -1,7 +1,44 @@
 # Current Sprint Tasks
 
-**Last Updated:** 2026-03-29
-**Active Sprints:** Sprint 15 (✅ Completed), Sprint 14 (✅ Completed), Sprint 12-13 (✅ Completed)
+**Last Updated:** 2026-03-30
+**Active Sprints:** Sprint 16 (✅ Completed), Sprint 15 (✅ Completed), Sprint 14 (✅ Completed)
+
+---
+
+## Sprint 16 - API Documentation / OpenAPI
+
+**Date:** 2026-03-30
+**Status:** ✅ Completed
+**Goal:** FastAPI Swagger UI ve ReDoc dokumantasyonlarini profesyonel hale getirmek.
+
+### 16.1 - Ana Uygulama Metadata
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `main.py` FastAPI title/description | Proje adi, Markdown ozellik listesi | ✅ |
+| `main.py` version/contact/license | v1.0.0, Kalem Core Team, Apache 2.0 | ✅ |
+| `main.py` openapi_tags | 5 tag grubu (Search, Library, Collections, Settings, System) | ✅ |
+
+### 16.2 - Router Tag/Summary/Docstring
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `search.py` | 1 endpoint: summary + Markdown docstring | ✅ |
+| `library.py` | 9 endpoint: summary + response_description + docstring | ✅ |
+| `collections.py` | 6 endpoint: summary + response_description + docstring | ✅ |
+| `settings.py` | 2 endpoint: summary + docstring, tag="Settings" | ✅ |
+| `system.py` | 2 endpoint: summary + response_description + docstring | ✅ |
+
+### 16.3 - Pydantic Schema Zenginlestirme
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `schemas/search.py` | Field descriptions, examples, json_schema_extra | ✅ |
+| `schemas/library.py` | Field descriptions, examples | ✅ |
+| `schemas/error.py` | Field descriptions, examples, json_schema_extra | ✅ |
+| Router inline models | Tum model alanlarina description + examples | ✅ |
+
+**Test Results:** Python syntax 9/9 OK, Frontend 6/6 passed, tsc clean, vite build clean
 
 ---
 
@@ -427,4 +464,4 @@ These tests require manual validation in running environment:
 
 ---
 
-*For detailed sprint documentation, see `docs/sprints/sprint12.md`, `sprint13.md`, `sprint14.md`, and `sprint15.md`*
+*For detailed sprint documentation, see `docs/sprints/sprint12.md` through `sprint16.md`*
