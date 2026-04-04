@@ -269,15 +269,27 @@ async def bulk_ingest_papers(
                 duplicate_count += 1
                 continue
 
-            entry = await service.add_paper_to_library(paper, request.search_query)
+            # Her makaleyi savepoint ile izole et — bir makale hata verirse
+            # sadece o makalenin değişiklikleri geri alınır, session temiz kalır.
+            async with db.begin_nested():
+                entry = await service.add_paper_to_library(
+                    paper, request.search_query, auto_commit=False
+                )
+            # Savepoint başarılı — değişiklikleri kalıcı yap
+            await db.commit()
             entry_ids.append(entry.id)
             try:
                 download_paper_task.delay(entry_id=entry.id)
             except Exception:
                 pass
         except Exception as e:
-            logger.warning(f"Bulk ingest failed: {paper.title[:50]} - {e}")
+            logger.warning(
+                f"Bulk ingest skipped: {paper.title[:50]} - {type(e).__name__}: {e}"
+            )
             failed_count += 1
+            # Savepoint otomatik rollback edildi, session hâlâ kullanılabilir.
+            # Güvenlik için açık rollback yaparak session'ın temiz olduğunu garanti et.
+            await db.rollback()
             continue
 
     return BulkIngestResponse(
