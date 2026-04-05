@@ -152,6 +152,26 @@ def download_paper_task(self, entry_id: int) -> dict:
         logger.info(f"[Download] Downloading: entry_id={entry_id} -> {file_path}")
         _download_file(pdf_url, file_path, runtime_proxy_url, entry_id)
 
+        # 5b. İndirilen dosyanın gerçek PDF olup olmadığını kontrol et
+        #     Bazı yayıncılar 200 OK ile HTML paywall sayfası döndürür
+        if not _is_valid_pdf(file_path) and paper.doi:
+            logger.warning(
+                f"[Download] İndirilen dosya geçerli PDF değil (muhtemelen HTML paywall), "
+                f"Unpaywall API kullanılarak alternatif link aranıyor... "
+                f"entry_id={entry_id}, DOI={paper.doi}"
+            )
+            unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
+            if unpaywall_url and unpaywall_url != pdf_url:
+                _download_file(unpaywall_url, file_path, runtime_proxy_url, entry_id)
+                if _is_valid_pdf(file_path):
+                    logger.info(
+                        f"[Download] Unpaywall alternatif PDF başarılı: entry_id={entry_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"[Download] Unpaywall PDF de geçersiz: entry_id={entry_id}"
+                    )
+
         # 6. Dosya boyutunu kontrol et
         file_size = file_path.stat().st_size
         if file_size < 1024:
@@ -215,6 +235,42 @@ def download_paper_task(self, entry_id: int) -> dict:
                 logger.warning(
                     f"[Download] EZProxy fallback failed: entry_id={entry_id}, reason={ez_err}"
                 )
+        # Unpaywall fallback: 403/paywall durumunda DOI üzerinden açık erişim PDF ara
+        if paper.doi and isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (
+            401, 402, 403,
+        ):
+            logger.info(
+                f"[Download] Unpaywall API kullanılarak alternatif link aranıyor... "
+                f"entry_id={entry_id}, DOI={paper.doi}"
+            )
+            unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
+            if unpaywall_url and unpaywall_url != pdf_url:
+                try:
+                    _download_file(unpaywall_url, file_path, runtime_proxy_url, entry_id)
+                    file_size = file_path.stat().st_size
+                    if file_size >= 1024:
+                        try:
+                            stored_path = str(file_path.relative_to(settings.data_dir))
+                        except ValueError:
+                            stored_path = str(file_path)
+                        entry.download_status = DownloadStatus.COMPLETED
+                        entry.file_path = stored_path
+                        entry.error_message = None
+                        db.commit()
+                        logger.info(
+                            f"[Download] Completed via Unpaywall: entry_id={entry_id}, "
+                            f"size={file_size} bytes"
+                        )
+                        return {
+                            "status": "completed",
+                            "entry_id": entry_id,
+                            "file_path": stored_path,
+                        }
+                except Exception as uw_err:
+                    logger.warning(
+                        f"[Download] Unpaywall fallback failed: entry_id={entry_id}, "
+                        f"reason={uw_err}"
+                    )
         try:
             # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
             if self.request.retries >= self.max_retries:
@@ -388,22 +444,86 @@ def retry_all_incomplete_downloads(self) -> dict:
         db.close()
 
 
+def _is_valid_pdf(file_path: Path) -> bool:
+    """Dosyanın geçerli bir PDF olup olmadığını kontrol eder.
+
+    PDF dosyaları %PDF magic byte'ı ile başlar.
+    HTML paywall sayfaları veya hata sayfaları bunu içermez.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(8)
+        return header.startswith(b"%PDF")
+    except Exception:
+        return False
+
+
+def _fetch_unpaywall_pdf_url(doi: str) -> str | None:
+    """Unpaywall API'den açık erişim PDF URL'i arar.
+
+    Args:
+        doi: Makale DOI'si
+
+    Returns:
+        Open Access PDF URL veya None
+    """
+    UNPAYWALL_EMAIL = "kalem-kasghar@academic-tool.org"
+    api_url = f"https://api.unpaywall.org/v2/{doi}?email={UNPAYWALL_EMAIL}"
+
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(api_url)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if not data.get("is_oa"):
+            logger.debug(f"[Unpaywall] Makale açık erişim değil: DOI={doi}")
+            return None
+
+        best_oa = data.get("best_oa_location") or {}
+        pdf_url = best_oa.get("url_for_pdf")
+
+        if pdf_url:
+            logger.info(f"[Unpaywall] Açık erişim PDF bulundu: DOI={doi}, url={pdf_url[:120]}")
+            return pdf_url
+
+        # url_for_pdf yoksa url_for_landing_page dene (bazen PDF'e yönlendirir)
+        landing_url = best_oa.get("url")
+        if landing_url:
+            logger.info(
+                f"[Unpaywall] PDF URL yok ama landing page bulundu: DOI={doi}, url={landing_url[:120]}"
+            )
+            return landing_url
+
+        logger.debug(f"[Unpaywall] OA ama kullanılabilir URL bulunamadı: DOI={doi}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"[Unpaywall] API hatası: DOI={doi}, {type(e).__name__}: {e}")
+        return None
+
+
 def _find_pdf_url(paper) -> str | None:
     """PDF URL'ini bulmaya çalışır.
 
     Öncelik sırası:
     1. Paper modeline kaydedilmiş pdf_url
-    2. DOI varsa Unpaywall'dan dene (Sprint 6.1'de implement edilecek)
+    2. DOI varsa Unpaywall API'den açık erişim PDF ara
     3. None
     """
     # 1. Paper'da kaydedilmiş pdf_url varsa kullan
     if paper.pdf_url:
         return paper.pdf_url
 
-    # 2. DOI varsa Unpaywall denemesi yapılabilir
+    # 2. DOI varsa Unpaywall'dan OA PDF ara
     if paper.doi:
-        # Placeholder: Unpaywall adapter Sprint 6.1'de eklenecek
-        pass
+        logger.info(
+            f"[Download] PDF URL yok, Unpaywall API kullanılarak alternatif link aranıyor... "
+            f"DOI={paper.doi}"
+        )
+        unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
+        if unpaywall_url:
+            return unpaywall_url
 
     return None
 
@@ -464,7 +584,13 @@ def _download_file(
 
     headers = {
         "User-Agent": user_agent,
-        "Accept": "application/pdf,*/*",
+        "Accept": "application/pdf,application/xhtml+xml,text/html,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "cross-site",
     }
     if headers_override:
         headers.update(headers_override)
