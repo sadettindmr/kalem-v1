@@ -377,16 +377,13 @@ class LibraryService:
         return result.scalar_one_or_none() is not None
 
     async def add_paper_to_library(
-        self, paper_data: PaperResponse, search_query: str,
-        auto_commit: bool = True,
+        self, paper_data: PaperResponse, search_query: str
     ) -> LibraryEntry:
         """Makaleyi kütüphaneye ekler.
 
         Args:
             paper_data: Arama sonucundan gelen makale verisi
             search_query: Kullanıcının arama terimi (etiketleme için)
-            auto_commit: True ise her makale sonrası commit yapar.
-                False ise commit çağıran tarafa bırakılır (bulk işlemler için).
 
         Returns:
             Oluşturulan LibraryEntry objesi (ID dahil)
@@ -401,9 +398,8 @@ class LibraryService:
         await self._process_tags(library_entry, search_query)
 
         # Değişiklikleri kaydet
-        if auto_commit:
-            await self.db.commit()
-            await self.db.refresh(library_entry)
+        await self.db.commit()
+        await self.db.refresh(library_entry)
 
         return library_entry
 

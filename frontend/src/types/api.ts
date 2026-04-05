@@ -132,6 +132,10 @@ export interface CheckLibraryResponse {
   saved_ids: string[];
 }
 
+export interface ResolveEntryIdsResponse {
+  entry_ids: number[];
+}
+
 // ==================== Collection Types ====================
 
 export interface Collection {

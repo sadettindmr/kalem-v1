@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useUIStore } from '@/stores/ui-store';
-import { bulkIngestPapers } from '@/services/library';
+import { bulkIngestPapers, resolveEntryIds } from '@/services/library';
 import PaperCard from '@/components/PaperCard';
 import CollectionPickerDialog from '@/components/CollectionPickerDialog';
 
@@ -166,6 +166,7 @@ export default function PaperList() {
     let totalAdded = 0;
     let totalDuplicate = 0;
     let totalFailed = 0;
+    let hadBatchError = false;
     const allSavedIds: string[] = [];
     const allEntryIds: number[] = [];
 
@@ -196,6 +197,28 @@ export default function PaperList() {
         allSavedIds.push(...batchIds);
       } catch {
         totalFailed += batch.length;
+        hadBatchError = true;
+      }
+    }
+
+    // Batch hatasi olduysa, backend'de kaydedilmis ama entry_id'sini
+    // alamadigimiz makaleleri kurtarmak icin resolve endpoint'ini cagir
+    if (hadBatchError && papersToAdd.length > 0) {
+      try {
+        const allTitles = papersToAdd.map((p) => p.title);
+        const resolved = await resolveEntryIds(allTitles);
+        if (resolved.entry_ids.length > 0) {
+          // Batch response'larindan gelen entry_id'leri set'e cevir (dedup icin)
+          const existingIds = new Set(allEntryIds);
+          for (const id of resolved.entry_ids) {
+            if (!existingIds.has(id)) {
+              allEntryIds.push(id);
+              existingIds.add(id);
+            }
+          }
+        }
+      } catch {
+        // Kurtarma basarisiz — mevcut entry_id'lerle devam et
       }
     }
 
