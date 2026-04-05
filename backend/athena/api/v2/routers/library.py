@@ -240,6 +240,59 @@ async def check_library_papers(
     return CheckLibraryResponse(saved_ids=list(saved_ids))
 
 
+class ResolveEntryIdsRequest(BaseModel):
+    """Başlık listesinden entry ID çözümleme isteği."""
+
+    titles: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Çözümlenecek makale başlık listesi",
+    )
+
+
+class ResolveEntryIdsResponse(BaseModel):
+    """Entry ID çözümleme yanıtı."""
+
+    entry_ids: list[int] = Field(
+        ...,
+        description="Kütüphanede bulunan makalelerin entry ID listesi",
+    )
+
+
+@router.post(
+    "/resolve-entry-ids",
+    response_model=ResolveEntryIdsResponse,
+    summary="Başlıklardan Entry ID Çözümle",
+    response_description="Kütüphanede bulunan makalelerin entry ID listesi",
+)
+async def resolve_entry_ids(
+    request: ResolveEntryIdsRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResolveEntryIdsResponse:
+    """Verilen makale başlıklarının kütüphanedeki entry ID'lerini çözümler.
+
+    Bulk ingest sonrası batch hataları durumunda, frontend'in
+    gerçekte kaydedilen makalelerin entry ID'lerini kurtarması için kullanılır.
+    """
+    from athena.services.library import slugify
+
+    if not request.titles:
+        return ResolveEntryIdsResponse(entry_ids=[])
+
+    title_slugs = [slugify(t) for t in request.titles]
+
+    stmt = (
+        select(LibraryEntry.id)
+        .join(Paper, LibraryEntry.paper_id == Paper.id)
+        .where(Paper.title_slug.in_(title_slugs))
+    )
+    result = await db.execute(stmt)
+    entry_ids = [row[0] for row in result.all()]
+
+    return ResolveEntryIdsResponse(entry_ids=entry_ids)
+
+
 @router.post(
     "/ingest/bulk",
     response_model=BulkIngestResponse,
@@ -262,21 +315,19 @@ async def bulk_ingest_papers(
     duplicate_count = 0
     failed_count = 0
 
-    for paper in request.papers:
+    for idx, paper in enumerate(request.papers):
         try:
             # Duplikasyon kontrolu
             if await service.is_paper_in_library(paper):
                 duplicate_count += 1
                 continue
 
-            # Her makaleyi savepoint ile izole et — bir makale hata verirse
-            # sadece o makalenin değişiklikleri geri alınır, session temiz kalır.
-            async with db.begin_nested():
-                entry = await service.add_paper_to_library(
-                    paper, request.search_query, auto_commit=False
-                )
-            # Savepoint başarılı — değişiklikleri kalıcı yap
-            await db.commit()
+            # add_paper_to_library her başarılı makaleyi kendi commit'ler.
+            # Hata durumunda session rollback ile temizlenir,
+            # önceden commit'lenmiş makaleler güvende kalır.
+            entry = await service.add_paper_to_library(
+                paper, request.search_query
+            )
             entry_ids.append(entry.id)
             try:
                 download_paper_task.delay(entry_id=entry.id)
@@ -284,12 +335,14 @@ async def bulk_ingest_papers(
                 pass
         except Exception as e:
             logger.warning(
-                f"Bulk ingest skipped: {paper.title[:50]} - {type(e).__name__}: {e}"
+                f"Bulk ingest skipped [{idx+1}/{len(request.papers)}]: "
+                f"{paper.title[:80]} - {type(e).__name__}: {e}"
             )
             failed_count += 1
-            # Savepoint otomatik rollback edildi, session hâlâ kullanılabilir.
-            # Güvenlik için açık rollback yaparak session'ın temiz olduğunu garanti et.
-            await db.rollback()
+            try:
+                await db.rollback()
+            except Exception:
+                logger.error("Rollback failed during bulk ingest, recreating session state")
             continue
 
     return BulkIngestResponse(

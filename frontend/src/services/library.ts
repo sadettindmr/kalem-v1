@@ -4,7 +4,7 @@
  */
 
 import api from '@/lib/api';
-import type { LibraryListResponse, IngestRequest, IngestResponse, BulkIngestRequest, BulkIngestResponse, CheckLibraryResponse } from '@/types/api';
+import type { LibraryListResponse, IngestRequest, IngestResponse, BulkIngestRequest, BulkIngestResponse, CheckLibraryResponse, ResolveEntryIdsResponse } from '@/types/api';
 
 interface LibraryParams {
   page?: number;
@@ -56,6 +56,14 @@ export async function bulkIngestPapers(data: BulkIngestRequest): Promise<BulkIng
  */
 export async function checkLibraryPapers(external_ids: string[]): Promise<CheckLibraryResponse> {
   return api.post<never, CheckLibraryResponse>('/library/check', { external_ids });
+}
+
+/**
+ * Makale başlıklarından kütüphanedeki entry ID'leri çözümler.
+ * Bulk ingest sonrası batch hataları durumunda kurtarma için kullanılır.
+ */
+export async function resolveEntryIds(titles: string[]): Promise<ResolveEntryIdsResponse> {
+  return api.post<never, ResolveEntryIdsResponse>('/library/resolve-entry-ids', { titles });
 }
 
 /**
