@@ -1,4 +1,15 @@
-import random
+"""PDF indirme Celery task modülü.
+
+Makale PDF'lerini indirip yerel dosya sistemine kaydeder.
+Başarısız indirmeler için Fallback Chain (Yedekleme Zinciri) kullanır:
+
+  1. PrimaryDownload — Kaydedilmiş pdf_url'den doğrudan indir
+  2. Unpaywall       — DOI ile açık erişim PDF bul ve indir
+  3. CoreAPI         — DOI ile CORE deposundan bul ve indir
+
+Fallback chain başarısız olursa EZProxy fallback denenir (ayrı mekanizma).
+"""
+
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -14,18 +25,7 @@ from sqlalchemy.orm import Session
 from athena.core.config import get_settings
 from athena.models.library import DownloadStatus, LibraryEntry
 from athena.models.settings import UserSettings
-
-# User-Agent rotasyonu için liste
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-]
-
-# Indirme timeout suresi (saniye)
-DOWNLOAD_TIMEOUT = 120.0
+from athena.tasks.download_strategies import PaperMeta, run_fallback_chain
 
 
 def slugify(text: str) -> str:
@@ -56,21 +56,15 @@ def generate_file_path(paper, settings) -> Path:
 
     Format: {data_dir}/{paper_id}/{year}_{author_slug}_{title_slug}.pdf
     """
-    # Yıl
     year = paper.year or "unknown"
 
-    # İlk yazarın slug'ı
     author_slug = "unknown"
     if paper.authors:
         author_slug = slugify(paper.authors[0].name)
 
-    # Başlık slug'ı
     title_slug = slugify(paper.title)
-
-    # Dosya adı
     filename = f"{year}_{author_slug}_{title_slug}.pdf"
 
-    # Tam yol
     base_dir = Path(settings.data_dir)
     paper_dir = base_dir / str(paper.id)
 
@@ -88,16 +82,13 @@ def generate_file_path(paper, settings) -> Path:
 def download_paper_task(self, entry_id: int) -> dict:
     """PDF indirme Celery task'i.
 
-    Args:
-        entry_id: LibraryEntry ID
-
-    Returns:
-        İşlem sonucu dict
+    Fallback Chain ile indirme dener, başarısız olursa EZProxy'ye düşer.
     """
     settings = get_settings()
     db: Session = get_sync_db_session()
     runtime_proxy_url = _resolve_runtime_proxy_url(db, settings.outbound_proxy)
     ezproxy_settings = _load_ezproxy_settings(db)
+    core_api_key = _load_core_api_key(db, settings)
 
     retry_info = (
         f"(attempt {self.request.retries + 1}/{self.max_retries + 1})"
@@ -125,95 +116,80 @@ def download_paper_task(self, entry_id: int) -> dict:
         entry.download_status = DownloadStatus.DOWNLOADING
         db.commit()
 
-        # 3. PDF URL kontrol
-        pdf_url = _find_pdf_url(paper)
-        if not pdf_url and not paper.doi:
-            entry.download_status = DownloadStatus.FAILED
-            entry.error_message = (
-                "PDF URL bulunamadı. Makale muhtemelen açık erişim değil."
-            )
-            db.commit()
-            logger.warning(
-                f"[Download] No PDF URL or DOI found: entry_id={entry_id}, paper_id={paper.id}"
-            )
-            return {"status": "failed", "message": "No PDF URL"}
-        if pdf_url:
-            logger.info(f"[Download] PDF URL found: {pdf_url[:120]}")
-        else:
-            logger.info(
-                f"[Download] No direct PDF URL. Will require DOI-based EZProxy fallback."
-            )
-
-        # 4. Dosya yolu oluştur
+        # 3. Dosya yolu oluştur
         file_path = generate_file_path(paper, settings)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 5. PDF indir
-        logger.info(f"[Download] Downloading: entry_id={entry_id} -> {file_path}")
-        _download_file(pdf_url, file_path, runtime_proxy_url, entry_id)
-
-        # 5b. İndirilen dosyanın gerçek PDF olup olmadığını kontrol et
-        #     Bazı yayıncılar 200 OK ile HTML paywall sayfası döndürür
-        if not _is_valid_pdf(file_path) and paper.doi:
-            logger.warning(
-                f"[Download] İndirilen dosya geçerli PDF değil (muhtemelen HTML paywall), "
-                f"Unpaywall API kullanılarak alternatif link aranıyor... "
-                f"entry_id={entry_id}, DOI={paper.doi}"
-            )
-            unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
-            if unpaywall_url and unpaywall_url != pdf_url:
-                _download_file(unpaywall_url, file_path, runtime_proxy_url, entry_id)
-                if _is_valid_pdf(file_path):
-                    logger.info(
-                        f"[Download] Unpaywall alternatif PDF başarılı: entry_id={entry_id}"
-                    )
-                else:
-                    logger.warning(
-                        f"[Download] Unpaywall PDF de geçersiz: entry_id={entry_id}"
-                    )
-
-        # 6. Dosya boyutunu kontrol et
-        file_size = file_path.stat().st_size
-        if file_size < 1024:
-            logger.warning(
-                f"[Download] Suspiciously small file ({file_size} bytes): entry_id={entry_id}"
-            )
-
-        # 7. Başarılı: Status ve file_path güncelle
-        # file_path'i relative (paper_id/filename.pdf) sakla ki /files mount'u ile
-        # URL üretimi tutarlı olsun. (Eski kayitlar absolute olabilir.)
-        try:
-            stored_path = str(file_path.relative_to(settings.data_dir))
-        except ValueError:
-            stored_path = str(file_path)
-
-        entry.download_status = DownloadStatus.COMPLETED
-        entry.file_path = stored_path
-        entry.error_message = None  # Başarılı olduğunda hata mesajını temizle
-        db.commit()
-
-        logger.info(
-            f"[Download] Completed: entry_id={entry_id}, size={file_size} bytes, path={file_path}"
+        # 4. Fallback Chain ile indir
+        meta = PaperMeta(
+            pdf_url=paper.pdf_url,
+            doi=paper.doi,
+            title=paper.title,
+            entry_id=entry_id,
         )
-        return {
-            "status": "completed",
-            "entry_id": entry_id,
-            "file_path": stored_path,
-            "file_size": file_size,
-        }
+        success = run_fallback_chain(
+            meta=meta,
+            file_path=file_path,
+            proxy_url=runtime_proxy_url,
+            core_api_key=core_api_key,
+        )
+
+        if success:
+            file_size = file_path.stat().st_size
+            try:
+                stored_path = str(file_path.relative_to(settings.data_dir))
+            except ValueError:
+                stored_path = str(file_path)
+
+            entry.download_status = DownloadStatus.COMPLETED
+            entry.file_path = stored_path
+            entry.error_message = None
+            db.commit()
+
+            logger.info(
+                f"[Download] Completed: entry_id={entry_id}, "
+                f"size={file_size} bytes, path={stored_path}"
+            )
+            return {
+                "status": "completed",
+                "entry_id": entry_id,
+                "file_path": stored_path,
+                "file_size": file_size,
+            }
+
+        # 5. Fallback chain başarısız — PDF/DOI yoksa direkt fail
+        if not paper.pdf_url and not paper.doi:
+            entry.download_status = DownloadStatus.FAILED
+            entry.error_message = (
+                "PDF URL ve DOI bulunamadı. Makale muhtemelen açık erişim değil."
+            )
+            db.commit()
+            logger.warning(
+                f"[Download] No PDF URL or DOI: entry_id={entry_id}, paper_id={paper.id}"
+            )
+            return {"status": "failed", "message": "No PDF URL or DOI"}
+
+        # 6. Fallback chain başarısız — HTTP üzerinden son deneme ve EZProxy fallback
+        #    için orijinal hata zincirini tetikle (Celery retry mekanizması için)
+        logger.warning(
+            f"[Download] Fallback chain tükenmiş, EZProxy/retry denenecek: "
+            f"entry_id={entry_id}"
+        )
+        _raise_for_retry(meta, runtime_proxy_url)
 
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         error_type = type(e).__name__
         logger.warning(
             f"[Download] HTTP error: entry_id={entry_id}, type={error_type}, detail={e}"
         )
-        if _should_try_ezproxy(e, pdf_url, paper, ezproxy_settings):
+        # EZProxy fallback (mevcut mantık korunuyor, dokunulmadı)
+        if _should_try_ezproxy(e, paper.pdf_url, paper, ezproxy_settings):
             try:
                 _download_via_ezproxy(
                     ezproxy_settings,
                     file_path,
                     paper,
-                    pdf_url,
+                    paper.pdf_url,
                     runtime_proxy_url,
                     entry_id,
                 )
@@ -233,46 +209,10 @@ def download_paper_task(self, entry_id: int) -> dict:
                 }
             except Exception as ez_err:
                 logger.warning(
-                    f"[Download] EZProxy fallback failed: entry_id={entry_id}, reason={ez_err}"
+                    f"[Download] EZProxy fallback failed: entry_id={entry_id}, "
+                    f"reason={ez_err}"
                 )
-        # Unpaywall fallback: 403/paywall durumunda DOI üzerinden açık erişim PDF ara
-        if paper.doi and isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (
-            401, 402, 403,
-        ):
-            logger.info(
-                f"[Download] Unpaywall API kullanılarak alternatif link aranıyor... "
-                f"entry_id={entry_id}, DOI={paper.doi}"
-            )
-            unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
-            if unpaywall_url and unpaywall_url != pdf_url:
-                try:
-                    _download_file(unpaywall_url, file_path, runtime_proxy_url, entry_id)
-                    file_size = file_path.stat().st_size
-                    if file_size >= 1024:
-                        try:
-                            stored_path = str(file_path.relative_to(settings.data_dir))
-                        except ValueError:
-                            stored_path = str(file_path)
-                        entry.download_status = DownloadStatus.COMPLETED
-                        entry.file_path = stored_path
-                        entry.error_message = None
-                        db.commit()
-                        logger.info(
-                            f"[Download] Completed via Unpaywall: entry_id={entry_id}, "
-                            f"size={file_size} bytes"
-                        )
-                        return {
-                            "status": "completed",
-                            "entry_id": entry_id,
-                            "file_path": stored_path,
-                        }
-                except Exception as uw_err:
-                    logger.warning(
-                        f"[Download] Unpaywall fallback failed: entry_id={entry_id}, "
-                        f"reason={uw_err}"
-                    )
         try:
-            # HTTP hatasinda kaydin "downloading" durumunda takili kalmasini engelle.
             if self.request.retries >= self.max_retries:
                 entry.download_status = DownloadStatus.FAILED
                 entry.error_message = f"HTTP hatası ({error_type}): {str(e)[:200]}"
@@ -289,7 +229,8 @@ def download_paper_task(self, entry_id: int) -> dict:
             entry.download_status = DownloadStatus.PENDING
             db.commit()
             logger.info(
-                f"[Download] Marked pending for retry: entry_id={entry_id}, next_attempt={self.request.retries + 2}"
+                f"[Download] Marked pending for retry: entry_id={entry_id}, "
+                f"next_attempt={self.request.retries + 2}"
             )
         except Exception as mark_err:
             logger.error(
@@ -300,7 +241,6 @@ def download_paper_task(self, entry_id: int) -> dict:
         raise
 
     except MaxRetriesExceededError:
-        # Maksimum retry aşıldı
         entry.download_status = DownloadStatus.FAILED
         entry.error_message = "Maksimum deneme sayısı aşıldı. PDF erişilemiyor."
         db.commit()
@@ -308,10 +248,10 @@ def download_paper_task(self, entry_id: int) -> dict:
         return {"status": "failed", "message": "Max retries exceeded"}
 
     except Exception as e:
-        # Beklenmeyen hata
         error_type = type(e).__name__
         logger.error(
-            f"[Download] Unexpected error: entry_id={entry_id}, type={error_type}, detail={e}"
+            f"[Download] Unexpected error: entry_id={entry_id}, "
+            f"type={error_type}, detail={e}"
         )
         try:
             entry.download_status = DownloadStatus.FAILED
@@ -332,15 +272,11 @@ def retry_stuck_downloads(self) -> dict:
     Kriterler:
     - download_status = 'downloading' veya 'pending'
     - updated_at değeri 1 saatten eski
-
-    Bu task manuel olarak POST /api/v2/library/retry-downloads ile
-    veya Celery Beat ile periyodik olarak çağrılabilir.
     """
     db: Session = get_sync_db_session()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
 
     try:
-        # Takılı kayıtları bul
         stmt = select(LibraryEntry).where(
             or_(
                 LibraryEntry.download_status == DownloadStatus.PENDING,
@@ -359,7 +295,6 @@ def retry_stuck_downloads(self) -> dict:
 
         retried_ids = []
         for entry in stuck_entries:
-            # Durumu pending'e çevir
             entry.download_status = DownloadStatus.PENDING
             retried_ids.append(entry.id)
             logger.info(
@@ -368,7 +303,6 @@ def retry_stuck_downloads(self) -> dict:
 
         db.commit()
 
-        # Tekrar kuyruğa ekle
         for entry_id in retried_ids:
             download_paper_task.delay(entry_id=entry_id)
             logger.info(f"[RetryStuck] Re-queued entry_id={entry_id}")
@@ -394,7 +328,6 @@ def retry_all_incomplete_downloads(self) -> dict:
 
     pending, downloading ve failed durumdaki TUM kayitlari bulur,
     durumlarini pending'e cevirip tekrar indirme kuyruguna ekler.
-    Manuel tetikleme icin (Settings sayfasi).
     """
     db: Session = get_sync_db_session()
 
@@ -444,88 +377,24 @@ def retry_all_incomplete_downloads(self) -> dict:
         db.close()
 
 
-def _is_valid_pdf(file_path: Path) -> bool:
-    """Dosyanın geçerli bir PDF olup olmadığını kontrol eder.
-
-    PDF dosyaları %PDF magic byte'ı ile başlar.
-    HTML paywall sayfaları veya hata sayfaları bunu içermez.
-    """
-    try:
-        with open(file_path, "rb") as f:
-            header = f.read(8)
-        return header.startswith(b"%PDF")
-    except Exception:
-        return False
+# ─────────────────────────────────────────────────────────────
+# Yardımcı fonksiyonlar
+# ─────────────────────────────────────────────────────────────
 
 
-def _fetch_unpaywall_pdf_url(doi: str) -> str | None:
-    """Unpaywall API'den açık erişim PDF URL'i arar.
+def _raise_for_retry(meta: PaperMeta, proxy_url: str | None) -> None:
+    """Fallback chain başarısız olduktan sonra, Celery retry mekanizmasını
+    tetiklemek için orijinal URL'ye bir kez daha istek atarak HTTPStatusError
+    veya RequestError fırlatır."""
+    from athena.tasks.download_strategies import _browser_headers, _download_url
 
-    Args:
-        doi: Makale DOI'si
-
-    Returns:
-        Open Access PDF URL veya None
-    """
-    UNPAYWALL_EMAIL = "kalem-kasghar@academic-tool.org"
-    api_url = f"https://api.unpaywall.org/v2/{doi}?email={UNPAYWALL_EMAIL}"
-
-    try:
-        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
-            resp = client.get(api_url)
-            resp.raise_for_status()
-            data = resp.json()
-
-        if not data.get("is_oa"):
-            logger.debug(f"[Unpaywall] Makale açık erişim değil: DOI={doi}")
-            return None
-
-        best_oa = data.get("best_oa_location") or {}
-        pdf_url = best_oa.get("url_for_pdf")
-
-        if pdf_url:
-            logger.info(f"[Unpaywall] Açık erişim PDF bulundu: DOI={doi}, url={pdf_url[:120]}")
-            return pdf_url
-
-        # url_for_pdf yoksa url_for_landing_page dene (bazen PDF'e yönlendirir)
-        landing_url = best_oa.get("url")
-        if landing_url:
-            logger.info(
-                f"[Unpaywall] PDF URL yok ama landing page bulundu: DOI={doi}, url={landing_url[:120]}"
-            )
-            return landing_url
-
-        logger.debug(f"[Unpaywall] OA ama kullanılabilir URL bulunamadı: DOI={doi}")
-        return None
-
-    except Exception as e:
-        logger.warning(f"[Unpaywall] API hatası: DOI={doi}, {type(e).__name__}: {e}")
-        return None
-
-
-def _find_pdf_url(paper) -> str | None:
-    """PDF URL'ini bulmaya çalışır.
-
-    Öncelik sırası:
-    1. Paper modeline kaydedilmiş pdf_url
-    2. DOI varsa Unpaywall API'den açık erişim PDF ara
-    3. None
-    """
-    # 1. Paper'da kaydedilmiş pdf_url varsa kullan
-    if paper.pdf_url:
-        return paper.pdf_url
-
-    # 2. DOI varsa Unpaywall'dan OA PDF ara
-    if paper.doi:
-        logger.info(
-            f"[Download] PDF URL yok, Unpaywall API kullanılarak alternatif link aranıyor... "
-            f"DOI={paper.doi}"
-        )
-        unpaywall_url = _fetch_unpaywall_pdf_url(paper.doi)
-        if unpaywall_url:
-            return unpaywall_url
-
-    return None
+    if meta.pdf_url:
+        _download_url(meta.pdf_url, proxy_url)
+    elif meta.doi:
+        doi_url = f"https://doi.org/{meta.doi}"
+        _download_url(doi_url, proxy_url)
+    else:
+        raise ValueError("PDF URL ve DOI bulunamadı")
 
 
 def _resolve_runtime_proxy_url(db: Session, fallback_proxy: str | None) -> str | None:
@@ -566,49 +435,17 @@ def _load_ezproxy_settings(db: Session) -> dict | None:
     }
 
 
-def _download_file(
-    url: str | None,
-    file_path: Path,
-    proxy_url: str | None = None,
-    entry_id: int | None = None,
-    headers_override: dict | None = None,
-) -> None:
-    """URL'den dosyayı indirir.
-
-    Args:
-        url: İndirilecek dosyanın URL'i
-        file_path: Kaydedilecek dosya yolu
-    """
-    # Rastgele User-Agent seç
-    user_agent = random.choice(USER_AGENTS)
-
-    headers = {
-        "User-Agent": user_agent,
-        "Accept": "application/pdf,application/xhtml+xml,text/html,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "cross-site",
-    }
-    if headers_override:
-        headers.update(headers_override)
-
-    client_kwargs: dict = {"timeout": DOWNLOAD_TIMEOUT, "follow_redirects": True}
-    if proxy_url:
-        client_kwargs["proxy"] = proxy_url
-
-    if not url:
-        raise ValueError("PDF URL is required")
-
-    with httpx.Client(**client_kwargs) as client:
-        with client.stream("GET", url, headers=headers) as response:
-            response.raise_for_status()
-
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
+def _load_core_api_key(db: Session, settings) -> str | None:
+    """DB veya .env'den CORE API anahtarını çeker."""
+    try:
+        row = db.execute(
+            select(UserSettings).order_by(UserSettings.id.asc())
+        ).scalar_one_or_none()
+        if row and row.core_api_key:
+            return row.core_api_key
+    except Exception:
+        pass
+    return getattr(settings, "core_api_key", None)
 
 
 def _should_try_ezproxy(
@@ -647,9 +484,25 @@ def _download_via_ezproxy(
     proxy_url: str | None,
     entry_id: int | None,
 ) -> None:
+    """EZProxy üzerinden indirme. Mevcut mantık aynen korunuyor."""
+    from athena.tasks.download_strategies import _browser_headers, _download_url
+
     target = _build_ezproxy_target(ezproxy_settings["prefix"], original_pdf_url, paper)
     logger.info(
-        f"[Download] EZProxy fallback attempted: entry_id={entry_id}, target={target[:120]}"
+        f"[Download] EZProxy fallback attempted: entry_id={entry_id}, "
+        f"target={target[:120]}"
     )
-    headers = {"Cookie": ezproxy_settings["cookie"]}
-    _download_file(target, file_path, proxy_url, entry_id, headers_override=headers)
+    headers = _browser_headers()
+    headers["Cookie"] = ezproxy_settings["cookie"]
+
+    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
+    if proxy_url:
+        client_kwargs["proxy"] = proxy_url
+
+    with httpx.Client(**client_kwargs) as client:
+        with client.stream("GET", target, headers=headers) as response:
+            response.raise_for_status()
+
+            with open(file_path, "wb") as f:
+                for chunk in response.iter_bytes(chunk_size=8192):
+                    f.write(chunk)
